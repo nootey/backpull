@@ -1,4 +1,4 @@
-# rpi-backups
+# backpull
 
 A Go CLI for pulling backups off a self-hosted server over SSH.
 
