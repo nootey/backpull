@@ -1,4 +1,4 @@
-package backup
+package job
 
 import (
 	"context"
@@ -10,17 +10,18 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
+
 	"backpull/internal/config"
 	"backpull/internal/store"
 )
 
 var testTime = time.Date(2026, 7, 6, 15, 30, 12, 0, time.UTC)
 
-var testService = config.Service{
-	Name:      "postgres",
-	Type:      config.TypeDBDump,
-	Container: "wealth-warden-db",
-	Command:   "pg_dump -U app appdb",
+var testJob = config.Job{
+	Name:    "postgres",
+	Command: "docker exec app-db pg_dump -U app appdb",
+	Output:  "postgres.sql",
 }
 
 type fakeRunner struct {
@@ -37,18 +38,17 @@ func (r *fakeRunner) RunCommand(_ context.Context, command string, stdout io.Wri
 	return r.err
 }
 
-func TestDBDump(t *testing.T) {
+func TestRun(t *testing.T) {
 	dest := t.TempDir()
 	run := store.NewRun(dest, testTime)
 	runner := &fakeRunner{output: []byte("-- PostgreSQL database dump")}
 
-	if err := DBDump(context.Background(), runner, run, testService); err != nil {
-		t.Fatalf("DBDump returned error: %v", err)
+	if err := Run(context.Background(), zap.NewNop(), runner, run, testJob); err != nil {
+		t.Fatalf("Run returned error: %v", err)
 	}
 
-	want := "docker exec wealth-warden-db pg_dump -U app appdb"
-	if runner.gotCommand != want {
-		t.Errorf("command = %q, want %q", runner.gotCommand, want)
+	if runner.gotCommand != testJob.Command {
+		t.Errorf("command = %q, want %q", runner.gotCommand, testJob.Command)
 	}
 
 	final := filepath.Join(dest, "2026-07-06_153012", "postgres", "postgres.sql")
@@ -57,17 +57,17 @@ func TestDBDump(t *testing.T) {
 		t.Fatalf("reading final file: %v", err)
 	}
 	if string(data) != "-- PostgreSQL database dump" {
-		t.Errorf("dump contents = %q, want %q", data, "-- PostgreSQL database dump")
+		t.Errorf("output contents = %q, want %q", data, "-- PostgreSQL database dump")
 	}
 }
 
-func TestDBDumpCommandError(t *testing.T) {
+func TestRunCommandError(t *testing.T) {
 	dest := t.TempDir()
 	run := store.NewRun(dest, testTime)
-	runner := &fakeRunner{output: []byte("partial dump"), err: errors.New("exit status 1")}
+	runner := &fakeRunner{output: []byte("partial output"), err: errors.New("exit status 1")}
 
-	if err := DBDump(context.Background(), runner, run, testService); err == nil {
-		t.Fatal("DBDump succeeded, want error")
+	if err := Run(context.Background(), zap.NewNop(), runner, run, testJob); err == nil {
+		t.Fatal("Run succeeded, want error")
 	}
 
 	dir := filepath.Join(dest, "2026-07-06_153012", "postgres")
@@ -79,18 +79,18 @@ func TestDBDumpCommandError(t *testing.T) {
 	}
 }
 
-func TestDBDumpEmptyOutput(t *testing.T) {
+func TestRunEmptyOutput(t *testing.T) {
 	dest := t.TempDir()
 	run := store.NewRun(dest, testTime)
 	runner := &fakeRunner{output: nil}
 
-	err := DBDump(context.Background(), runner, run, testService)
+	err := Run(context.Background(), zap.NewNop(), runner, run, testJob)
 	if err == nil {
-		t.Fatal("DBDump succeeded on empty output, want error")
+		t.Fatal("Run succeeded on empty output, want error")
 	}
 
 	final := filepath.Join(dest, "2026-07-06_153012", "postgres", "postgres.sql")
 	if _, err := os.Stat(final); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("final file exists after empty dump (stat err: %v)", err)
+		t.Errorf("final file exists after empty output (stat err: %v)", err)
 	}
 }

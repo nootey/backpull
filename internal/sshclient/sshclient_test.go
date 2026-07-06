@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 
@@ -175,7 +176,7 @@ func (s *testServer) sshConfig(t *testing.T) config.SSH {
 
 func dialTestServer(t *testing.T, srv *testServer) *Client {
 	t.Helper()
-	c, err := connect(srv.sshConfig(t), srv.knownHosts)
+	c, err := connect(zap.NewNop(), srv.sshConfig(t), srv.knownHosts)
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
@@ -241,7 +242,7 @@ func TestConnectSingleKnownHostKeyType(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			c, err := connect(srv.sshConfig(t), kh)
+			c, err := connect(zap.NewNop(), srv.sshConfig(t), kh)
 			if err != nil {
 				t.Fatalf("connect with only %s in known_hosts: %v", alg, err)
 			}
@@ -257,7 +258,7 @@ func TestConnectUnknownHost(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := connect(srv.sshConfig(t), empty)
+	_, err := connect(zap.NewNop(), srv.sshConfig(t), empty)
 	if err == nil {
 		t.Fatal("connect succeeded, want unknown host error")
 	}
@@ -283,7 +284,7 @@ func TestConnectHostKeyMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = connect(srv.sshConfig(t), bad)
+	_, err = connect(zap.NewNop(), srv.sshConfig(t), bad)
 	if err == nil {
 		t.Fatal("connect succeeded, want host key mismatch error")
 	}
@@ -319,7 +320,7 @@ func TestConnectPassphrasePrompt(t *testing.T) {
 
 	stubPassphrase(t, func(path string) ([]byte, error) { return []byte("secret"), nil })
 
-	c, err := connect(cfg, srv.knownHosts)
+	c, err := connect(zap.NewNop(), cfg, srv.knownHosts)
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
@@ -341,7 +342,7 @@ func TestConnectWrongPassphrase(t *testing.T) {
 
 	stubPassphrase(t, func(path string) ([]byte, error) { return []byte("wrong"), nil })
 
-	_, err := connect(cfg, srv.knownHosts)
+	_, err := connect(zap.NewNop(), cfg, srv.knownHosts)
 	if err == nil {
 		t.Fatal("connect succeeded, want decrypt error")
 	}
@@ -357,7 +358,7 @@ func TestConnectPassphrasePromptUnavailable(t *testing.T) {
 
 	stubPassphrase(t, func(path string) ([]byte, error) { return nil, errors.New("no terminal") })
 
-	_, err := connect(cfg, srv.knownHosts)
+	_, err := connect(zap.NewNop(), cfg, srv.knownHosts)
 	if err == nil {
 		t.Fatal("connect succeeded, want passphrase error")
 	}
@@ -371,7 +372,7 @@ func TestConnectMissingKeyFile(t *testing.T) {
 	cfg := srv.sshConfig(t)
 	cfg.KeyFile = filepath.Join(t.TempDir(), "nope")
 
-	_, err := connect(cfg, srv.knownHosts)
+	_, err := connect(zap.NewNop(), cfg, srv.knownHosts)
 	if err == nil {
 		t.Fatal("connect succeeded, want missing key error")
 	}

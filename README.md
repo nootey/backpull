@@ -1,11 +1,51 @@
 # backpull
 
-A Go CLI for pulling backups off a self-hosted server over SSH.
+A Go CLI that runs configured commands on a remote server over SSH and pulls
+their output down to the local machine as timestamped files.
 
-Runs from any machine, connects via ssh to your server, and handles:
+Each **job** in the config is a remote command whose stdout is captured into a
+local file. What the command does is entirely up to you - backpull just runs
+it and streams the bytes back.
 
-- **Database dumps** — `dumps` executed inside running Docker containers, streamed back over SSH
-- **Config backups** — discovers and archives config/data directories for specified services (compose files, bind mounts, etc.)
-- **Docker volumes** — tars and pulls named volumes for services that don't expose bind-mounted config
+Typical use cases (and why this exists):
 
-Backups land on the source machine as timestamped archives, ready to move to external storage.
+- **Database dumps** - `pg_dump`/`mysqldump` executed inside a running Docker container via `docker exec`
+- **Config/data directories** - `tar -czf -` of a directory on the server
+- **Docker named volumes** - `docker run --rm -v vol:/data alpine tar -czf - -C /data .`
+
+Runs from Linux or Windows; The remote side just needs SSH and whatever tools your commands call.
+
+## Usage
+
+```
+backpull -config config.yaml
+```
+
+See [config.example.yaml](config.example.yaml) for a full example:
+
+
+Every job needs a unique `name`, a `command`, and an `output` filename (backpull can't guess the right extension for you).
+
+## How it works
+
+- **One SSH connection per run.** backpull dials `host:port`, authenticates
+  with `key_file` (or ssh-agent if unset - including the Windows OpenSSH
+  agent), then opens one session per job over the same connection.
+- **Host keys are verified against `~/.ssh/known_hosts`.** Unknown hosts are
+  rejected; connect once with plain `ssh` to add the key. A changed host key
+  fails with a mismatch error.
+- **Commands run verbatim.** The configured `command` is passed to the remote
+  shell exactly as written - no wrapping, no local shell involved. stdout
+  streams straight to the output file; it is never buffered in memory.
+- **Output layout is `<destination>/<timestamp>/<name>/<output>`**. Each run
+  gets a fresh timestamp directory, so runs never overwrite each other.
+- **Writes are atomic.** Output streams to `<output>.partial` and is only
+  renamed into place after the command exits 0 and the file is synced. An
+  interrupted or failed transfer never leaves a file that looks like a valid
+  backup.
+- **Failures are loud.** A non-zero exit fails the job with the command's
+  stderr in the error message; a command that produces no output is also
+  treated as a failure. The run stops at the first failed job.
+- **Logging** goes to stdout and `logs/app.log`. Set `log.level: debug` to see
+  every remote command as it executes; commands that write to stderr but still
+  succeed (e.g. `pg_dump` warnings) are logged as warnings.

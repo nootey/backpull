@@ -5,20 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
-const (
-	TypeDBDump    = "db_dump"
-	TypeConfigDir = "config_dir"
-	TypeVolume    = "volume"
-)
-
 type Config struct {
-	SSH         SSH       `yaml:"ssh"`
-	Destination string    `yaml:"destination"`
-	Services    []Service `yaml:"services"`
+	SSH         SSH    `yaml:"ssh"`
+	Log         Log    `yaml:"log"`
+	Destination string `yaml:"destination"`
+	Jobs        []Job  `yaml:"jobs"`
 }
 
 type SSH struct {
@@ -28,19 +24,15 @@ type SSH struct {
 	KeyFile string `yaml:"key_file"`
 }
 
-type Service struct {
-	Name string `yaml:"name"`
-	Type string `yaml:"type"`
+type Log struct {
+	Level string `yaml:"level"`
+}
 
-	// db_dump
-	Container string `yaml:"container"`
-	Command   string `yaml:"command"`
-
-	// config_dir
-	Path string `yaml:"path"`
-
-	// volume
-	Volume string `yaml:"volume"`
+// Job is a remote command whose stdout is captured into a local file.
+type Job struct {
+	Name    string `yaml:"name"`
+	Command string `yaml:"command"`
+	Output  string `yaml:"output"`
 }
 
 func Load(path string) (*Config, error) {
@@ -83,57 +75,37 @@ func (c *Config) validate() error {
 	if c.Destination == "" {
 		return errors.New("destination is required")
 	}
-	if len(c.Services) == 0 {
-		return errors.New("services must list at least one service")
+	if len(c.Jobs) == 0 {
+		return errors.New("jobs must list at least one job")
 	}
 
-	seen := make(map[string]bool, len(c.Services))
-	for i, s := range c.Services {
-		if s.Name == "" {
-			return fmt.Errorf("services[%d]: name is required", i)
+	seen := make(map[string]bool, len(c.Jobs))
+	for i, j := range c.Jobs {
+		if j.Name == "" {
+			return fmt.Errorf("jobs[%d]: name is required", i)
 		}
-		if seen[s.Name] {
-			return fmt.Errorf("duplicate service name %q", s.Name)
+		if seen[j.Name] {
+			return fmt.Errorf("duplicate job name %q", j.Name)
 		}
-		seen[s.Name] = true
+		seen[j.Name] = true
 
-		if err := s.validate(); err != nil {
-			return fmt.Errorf("service %q: %w", s.Name, err)
-		}
-	}
-	return nil
-}
-
-func (s *Service) validate() error {
-	var required, forbidden []field
-	switch s.Type {
-	case TypeDBDump:
-		required = []field{{"container", s.Container}, {"command", s.Command}}
-		forbidden = []field{{"path", s.Path}, {"volume", s.Volume}}
-	case TypeConfigDir:
-		required = []field{{"path", s.Path}}
-		forbidden = []field{{"container", s.Container}, {"command", s.Command}, {"volume", s.Volume}}
-	case TypeVolume:
-		required = []field{{"volume", s.Volume}}
-		forbidden = []field{{"container", s.Container}, {"command", s.Command}, {"path", s.Path}}
-	default:
-		return fmt.Errorf("type %q is not one of %s, %s, %s", s.Type, TypeDBDump, TypeConfigDir, TypeVolume)
-	}
-
-	for _, f := range required {
-		if f.value == "" {
-			return fmt.Errorf("%s is required for type %s", f.name, s.Type)
-		}
-	}
-	for _, f := range forbidden {
-		if f.value != "" {
-			return fmt.Errorf("%s is not allowed for type %s", f.name, s.Type)
+		if err := j.validate(); err != nil {
+			return fmt.Errorf("job %q: %w", j.Name, err)
 		}
 	}
 	return nil
 }
 
-type field struct {
-	name  string
-	value string
+func (j *Job) validate() error {
+	if j.Command == "" {
+		return errors.New("command is required")
+	}
+	if j.Output == "" {
+		return errors.New("output is required")
+	}
+	// output is joined into the run directory, so it must be a bare filename
+	if strings.ContainsAny(j.Output, `/\`) {
+		return fmt.Errorf("output %q must be a filename, not a path", j.Output)
+	}
+	return nil
 }

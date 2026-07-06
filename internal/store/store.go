@@ -17,8 +17,12 @@ func NewRun(destination string, now time.Time) *Run {
 	return &Run{dir: filepath.Join(destination, now.Format("2006-01-02_150405"))}
 }
 
-func (r *Run) Create(service, filename string) (*File, error) {
-	dir := filepath.Join(r.dir, service)
+func (r *Run) Dir() string {
+	return r.dir
+}
+
+func (r *Run) Create(job, filename string) (*File, error) {
+	dir := filepath.Join(r.dir, job)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("creating %s: %w", dir, err)
 	}
@@ -47,6 +51,11 @@ type File struct {
 
 func (f *File) Write(p []byte) (int, error) {
 	return f.f.Write(p)
+}
+
+// Path is the final destination the file will land at after Commit.
+func (f *File) Path() string {
+	return f.final
 }
 
 func (f *File) Commit() error {

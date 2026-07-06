@@ -14,21 +14,23 @@ ssh:
   port: 2222
   key_file: ~/.ssh/id_ed25519
 
+log:
+  level: debug
+
 destination: D:/backups
 
-services:
+jobs:
   - name: postgres
-    type: db_dump
-    container: postgres
-    command: pg_dump -U app appdb
+    command: docker exec postgres pg_dump -U app appdb
+    output: appdb.sql
 
   - name: caddy
-    type: config_dir
-    path: /srv/caddy
+    command: tar -czf - -C /srv/caddy .
+    output: caddy.tar.gz
 
   - name: grafana
-    type: volume
-    volume: grafana-data
+    command: docker run --rm -v grafana-data:/data alpine tar -czf - -C /data .
+    output: grafana-data.tar.gz
 `
 
 func TestParseValid(t *testing.T) {
@@ -49,24 +51,19 @@ func TestParseValid(t *testing.T) {
 	if cfg.SSH.KeyFile != "~/.ssh/id_ed25519" {
 		t.Errorf("SSH.KeyFile = %q, want %q", cfg.SSH.KeyFile, "~/.ssh/id_ed25519")
 	}
+	if cfg.Log.Level != "debug" {
+		t.Errorf("Log.Level = %q, want %q", cfg.Log.Level, "debug")
+	}
 	if cfg.Destination != "D:/backups" {
 		t.Errorf("Destination = %q, want %q", cfg.Destination, "D:/backups")
 	}
-	if len(cfg.Services) != 3 {
-		t.Fatalf("len(Services) = %d, want 3", len(cfg.Services))
+	if len(cfg.Jobs) != 3 {
+		t.Fatalf("len(Jobs) = %d, want 3", len(cfg.Jobs))
 	}
 
-	db := cfg.Services[0]
-	if db.Name != "postgres" || db.Type != TypeDBDump || db.Container != "postgres" || db.Command != "pg_dump -U app appdb" {
-		t.Errorf("unexpected db_dump service: %+v", db)
-	}
-	dir := cfg.Services[1]
-	if dir.Name != "caddy" || dir.Type != TypeConfigDir || dir.Path != "/srv/caddy" {
-		t.Errorf("unexpected config_dir service: %+v", dir)
-	}
-	vol := cfg.Services[2]
-	if vol.Name != "grafana" || vol.Type != TypeVolume || vol.Volume != "grafana-data" {
-		t.Errorf("unexpected volume service: %+v", vol)
+	j := cfg.Jobs[0]
+	if j.Name != "postgres" || j.Command != "docker exec postgres pg_dump -U app appdb" || j.Output != "appdb.sql" {
+		t.Errorf("unexpected job: %+v", j)
 	}
 }
 
@@ -76,10 +73,10 @@ ssh:
   host: server.example.com
   user: deploy
 destination: /backups
-services:
+jobs:
   - name: caddy
-    type: config_dir
-    path: /srv/caddy
+    command: tar -czf - -C /srv/caddy .
+    output: caddy.tar.gz
 `
 	cfg, err := Parse([]byte(yaml))
 	if err != nil {
@@ -102,10 +99,10 @@ func TestParseErrors(t *testing.T) {
 ssh:
   user: deploy
 destination: /backups
-services:
+jobs:
   - name: caddy
-    type: config_dir
-    path: /srv/caddy
+    command: tar -czf - -C /srv/caddy .
+    output: caddy.tar.gz
 `,
 			wantErr: "ssh.host",
 		},
@@ -115,10 +112,10 @@ services:
 ssh:
   host: server.example.com
 destination: /backups
-services:
+jobs:
   - name: caddy
-    type: config_dir
-    path: /srv/caddy
+    command: tar -czf - -C /srv/caddy .
+    output: caddy.tar.gz
 `,
 			wantErr: "ssh.user",
 		},
@@ -130,10 +127,10 @@ ssh:
   user: deploy
   port: 70000
 destination: /backups
-services:
+jobs:
   - name: caddy
-    type: config_dir
-    path: /srv/caddy
+    command: tar -czf - -C /srv/caddy .
+    output: caddy.tar.gz
 `,
 			wantErr: "ssh.port",
 		},
@@ -145,10 +142,10 @@ ssh:
   user: deploy
   port: -1
 destination: /backups
-services:
+jobs:
   - name: caddy
-    type: config_dir
-    path: /srv/caddy
+    command: tar -czf - -C /srv/caddy .
+    output: caddy.tar.gz
 `,
 			wantErr: "ssh.port",
 		},
@@ -158,146 +155,103 @@ services:
 ssh:
   host: server.example.com
   user: deploy
-services:
+jobs:
   - name: caddy
-    type: config_dir
-    path: /srv/caddy
+    command: tar -czf - -C /srv/caddy .
+    output: caddy.tar.gz
 `,
 			wantErr: "destination",
 		},
 		{
-			name: "no services",
+			name: "no jobs",
 			yaml: `
 ssh:
   host: server.example.com
   user: deploy
 destination: /backups
-services: []
+jobs: []
 `,
-			wantErr: "services",
+			wantErr: "jobs",
 		},
 		{
-			name: "missing services key",
+			name: "missing jobs key",
 			yaml: `
 ssh:
   host: server.example.com
   user: deploy
 destination: /backups
 `,
-			wantErr: "services",
+			wantErr: "jobs",
 		},
 		{
-			name: "missing service name",
+			name: "missing job name",
 			yaml: `
 ssh:
   host: server.example.com
   user: deploy
 destination: /backups
-services:
-  - type: config_dir
-    path: /srv/caddy
+jobs:
+  - command: tar -czf - -C /srv/caddy .
+    output: caddy.tar.gz
 `,
 			wantErr: "name",
 		},
 		{
-			name: "duplicate service names",
+			name: "duplicate job names",
 			yaml: `
 ssh:
   host: server.example.com
   user: deploy
 destination: /backups
-services:
+jobs:
   - name: caddy
-    type: config_dir
-    path: /srv/caddy
+    command: tar -czf - -C /srv/caddy .
+    output: caddy.tar.gz
   - name: caddy
-    type: volume
-    volume: caddy-data
+    command: tar -czf - -C /etc/caddy .
+    output: caddy-etc.tar.gz
 `,
-			wantErr: `duplicate service name "caddy"`,
+			wantErr: `duplicate job name "caddy"`,
 		},
 		{
-			name: "invalid type",
+			name: "missing command",
 			yaml: `
 ssh:
   host: server.example.com
   user: deploy
 destination: /backups
-services:
+jobs:
   - name: caddy
-    type: snapshot
-    path: /srv/caddy
+    output: caddy.tar.gz
 `,
-			wantErr: `service "caddy"`,
+			wantErr: `job "caddy": command is required`,
 		},
 		{
-			name: "db_dump missing container",
+			name: "missing output",
 			yaml: `
 ssh:
   host: server.example.com
   user: deploy
 destination: /backups
-services:
-  - name: postgres
-    type: db_dump
-    command: pg_dump -U app appdb
-`,
-			wantErr: `service "postgres"`,
-		},
-		{
-			name: "db_dump missing command",
-			yaml: `
-ssh:
-  host: server.example.com
-  user: deploy
-destination: /backups
-services:
-  - name: postgres
-    type: db_dump
-    container: postgres
-`,
-			wantErr: `service "postgres"`,
-		},
-		{
-			name: "config_dir missing path",
-			yaml: `
-ssh:
-  host: server.example.com
-  user: deploy
-destination: /backups
-services:
+jobs:
   - name: caddy
-    type: config_dir
+    command: tar -czf - -C /srv/caddy .
 `,
-			wantErr: `service "caddy"`,
+			wantErr: `job "caddy": output is required`,
 		},
 		{
-			name: "volume missing volume",
+			name: "output is a path",
 			yaml: `
 ssh:
   host: server.example.com
   user: deploy
 destination: /backups
-services:
-  - name: grafana
-    type: volume
+jobs:
+  - name: caddy
+    command: tar -czf - -C /srv/caddy .
+    output: ../caddy.tar.gz
 `,
-			wantErr: `service "grafana"`,
-		},
-		{
-			name: "field from another type",
-			yaml: `
-ssh:
-  host: server.example.com
-  user: deploy
-destination: /backups
-services:
-  - name: grafana
-    type: volume
-    volume: grafana-data
-    path: /srv/grafana
-`,
-			wantErr: `service "grafana"`,
+			wantErr: "must be a filename",
 		},
 		{
 			name: "unknown key",
@@ -306,10 +260,10 @@ ssh:
   host: server.example.com
   user: deploy
 destination: /backups
-services:
+jobs:
   - name: caddy
-    type: config_dir
-    pathh: /srv/caddy
+    command: tar -czf - -C /srv/caddy .
+    outputt: caddy.tar.gz
 `,
 			wantErr: "not found",
 		},
@@ -342,8 +296,8 @@ func TestLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if len(cfg.Services) != 3 {
-		t.Errorf("len(Services) = %d, want 3", len(cfg.Services))
+	if len(cfg.Jobs) != 3 {
+		t.Errorf("len(Jobs) = %d, want 3", len(cfg.Jobs))
 	}
 }
 

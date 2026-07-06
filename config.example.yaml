@@ -1,12 +1,20 @@
 ssh:
   host: <IP>
-  user: <USERNAME>
+  user: <USER>
   port: 22
-  key_file: <PATH>
+  key_file: ~/.ssh/id_ed25519 # omit to use ssh-agent
 
+log:
+  level: info # debug | info | warn | error (default: info)
+
+# local (absolute) directory where run output lands
 destination: <PATH>
 
-services:
+# each job runs a command on the remote host and captures its stdout
+# into <destination>/<timestamp>/<name>/<output>
+jobs:
   - name: <NAME>
-    type: config_dir
-    path: <PATH>
+    command: docker exec <CONTAINER> pg_dump -U postgres <DB-NAME>
+    output: <FILENAME>.<EXT>
+
+  # ...

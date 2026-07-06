@@ -8,10 +8,13 @@ import (
 	"os/signal"
 	"time"
 
-	"backpull/internal/backup"
+	"go.uber.org/zap"
+
 	"backpull/internal/config"
+	"backpull/internal/job"
 	"backpull/internal/sshclient"
 	"backpull/internal/store"
+	logging "backpull/pkg/logger"
 )
 
 func main() {
@@ -30,27 +33,37 @@ func run(cfgPath string) error {
 		return err
 	}
 
+	logger, err := logging.InitLogger(cfg.Log.Level)
+	if err != nil {
+		return fmt.Errorf("init logger: %w", err)
+	}
+	defer func() { _ = logger.Sync() }()
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	client, err := sshclient.Connect(cfg.SSH)
+	logger.Info("connecting", zap.String("host", cfg.SSH.Host), zap.String("user", cfg.SSH.User), zap.Int("port", cfg.SSH.Port))
+	client, err := sshclient.Connect(logger, cfg.SSH)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = client.Close() }()
-	fmt.Fprintf(os.Stderr, "connected to %s@%s\n", cfg.SSH.User, cfg.SSH.Host)
+	logger.Info("connected")
 
-	backups := store.NewRun(cfg.Destination, time.Now())
-	for _, svc := range cfg.Services {
-		switch svc.Type {
-		case config.TypeDBDump:
-			fmt.Fprintf(os.Stderr, "backing up %s...\n", svc.Name)
-			if err := backup.DBDump(ctx, client, backups, svc); err != nil {
-				return fmt.Errorf("backing up %s: %w", svc.Name, err)
-			}
-		default:
-			fmt.Fprintf(os.Stderr, "skipping %s: type %s not implemented yet\n", svc.Name, svc.Type)
+	out := store.NewRun(cfg.Destination, time.Now())
+	logger.Info("starting run", zap.String("dir", out.Dir()), zap.Int("jobs", len(cfg.Jobs)))
+
+	start := time.Now()
+	for _, j := range cfg.Jobs {
+		if err := job.Run(ctx, logger, client, out, j); err != nil {
+			return fmt.Errorf("job %q: %w", j.Name, err)
 		}
 	}
+
+	logger.Info("run complete",
+		zap.Int("jobs", len(cfg.Jobs)),
+		zap.String("dir", out.Dir()),
+		zap.Duration("duration", time.Since(start).Round(time.Millisecond)),
+	)
 	return nil
 }

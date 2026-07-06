@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -27,17 +28,18 @@ const maxStderr = 4096
 
 type Client struct {
 	conn *ssh.Client
+	log  *zap.Logger
 }
 
-func Connect(cfg config.SSH) (*Client, error) {
+func Connect(log *zap.Logger, cfg config.SSH) (*Client, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
 	}
-	return connect(cfg, filepath.Join(home, ".ssh", "known_hosts"))
+	return connect(log, cfg, filepath.Join(home, ".ssh", "known_hosts"))
 }
 
-func connect(cfg config.SSH, knownHostsPath string) (*Client, error) {
+func connect(log *zap.Logger, cfg config.SSH, knownHostsPath string) (*Client, error) {
 	hostKeys, err := skeemakh.NewDB(knownHostsPath)
 	if err != nil {
 		return nil, fmt.Errorf("loading known_hosts: %w", err)
@@ -49,6 +51,7 @@ func connect(cfg config.SSH, knownHostsPath string) (*Client, error) {
 	}
 
 	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
+	log.Debug("dialing", zap.String("addr", addr), zap.String("user", cfg.User))
 	conn, err := ssh.Dial("tcp", addr, &ssh.ClientConfig{
 		User:            cfg.User,
 		Auth:            []ssh.AuthMethod{auth},
@@ -68,7 +71,7 @@ func connect(cfg config.SSH, knownHostsPath string) (*Client, error) {
 		}
 		return nil, fmt.Errorf("connecting to %s: %w", addr, err)
 	}
-	return &Client{conn: conn}, nil
+	return &Client{conn: conn, log: log}, nil
 }
 
 func (c *Client) Close() error {
@@ -86,6 +89,7 @@ func (c *Client) RunCommand(ctx context.Context, command string, stdout io.Write
 	sess.Stdout = stdout
 	sess.Stderr = &stderr
 
+	c.log.Debug("executing remote command", zap.String("command", command))
 	if err := sess.Start(command); err != nil {
 		return fmt.Errorf("command %q: %w", command, err)
 	}
@@ -105,6 +109,11 @@ func (c *Client) RunCommand(ctx context.Context, command string, stdout io.Write
 			}
 			return fmt.Errorf("command %q: %w", command, err)
 		}
+		// commands like pg_dump report warnings on stderr even when they succeed
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			c.log.Warn("remote command wrote to stderr", zap.String("command", command), zap.String("stderr", msg))
+		}
+		c.log.Debug("remote command finished", zap.String("command", command))
 		return nil
 	}
 }
