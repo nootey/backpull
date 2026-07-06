@@ -71,17 +71,42 @@ func run(cfgPath, only string, dryRun bool) error {
 	out := store.NewRun(cfg.Destination, time.Now())
 	logger.Info("starting run", zap.String("dir", out.Dir()), zap.Int("jobs", len(jobs)))
 
+	type result struct {
+		name string
+		err  error
+	}
+
 	start := time.Now()
+	var results []result
 	for _, j := range jobs {
-		if err := job.Run(ctx, logger, client, out, j); err != nil {
-			return fmt.Errorf("job %q: %w", j.Name, err)
+		err := job.Run(ctx, logger, client, out, j)
+		if err != nil {
+			logger.Error("job failed", zap.String("job", j.Name), zap.Error(err))
+		}
+		results = append(results, result{name: j.Name, err: err})
+		if err != nil && ctx.Err() != nil {
+			break
+		}
+	}
+
+	failed := 0
+	for _, r := range results {
+		if r.err != nil {
+			failed++
+			logger.Error("summary: failed", zap.String("job", r.name), zap.Error(r.err))
+		} else {
+			logger.Info("summary: ok", zap.String("job", r.name))
 		}
 	}
 
 	logger.Info("run complete",
-		zap.Int("jobs", len(jobs)),
+		zap.Int("jobs", len(results)),
+		zap.Int("failed", failed),
 		zap.String("dir", out.Dir()),
 		zap.Duration("duration", time.Since(start).Round(time.Millisecond)),
 	)
+	if failed > 0 {
+		return fmt.Errorf("%d of %d jobs failed", failed, len(results))
+	}
 	return nil
 }

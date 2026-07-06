@@ -27,7 +27,7 @@ func InitLogger(level string) (*zap.Logger, error) {
 	// Set log level, falling back to Info on empty/invalid input
 	cfg.Level = zap.NewAtomicLevelAt(parseLevel(level))
 
-	logger, err := cfg.Build(zap.AddStacktrace(zapcore.ErrorLevel))
+	logger, err := cfg.Build(zap.AddStacktrace(zapcore.DPanicLevel))
 	if err != nil {
 		return nil, err
 	}
