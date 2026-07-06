@@ -21,6 +21,13 @@ Runs from Linux or Windows; The remote side just needs SSH and whatever tools yo
 backpull -config config.yaml
 ```
 
+To run a subset of jobs (e.g. re-running one that failed), pass `-only` with
+comma-separated job names:
+
+```
+backpull -only grafana,db
+```
+
 See [config.example.yaml](config.example.yaml) for a full example:
 
 

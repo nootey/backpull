@@ -14,21 +14,28 @@ import (
 	"backpull/internal/job"
 	"backpull/internal/sshclient"
 	"backpull/internal/store"
+	"backpull/internal/util"
 	logging "backpull/pkg/logger"
 )
 
 func main() {
 	cfgPath := flag.String("config", "config.yaml", "path to config file")
+	only := flag.String("only", "", "comma-separated job names to run (default: all)")
 	flag.Parse()
 
-	if err := run(*cfgPath); err != nil {
+	if err := run(*cfgPath, *only); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func run(cfgPath string) error {
+func run(cfgPath, only string) error {
 	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return err
+	}
+
+	jobs, err := util.FilterJobs(cfg.Jobs, only)
 	if err != nil {
 		return err
 	}
@@ -51,17 +58,17 @@ func run(cfgPath string) error {
 	logger.Info("connected")
 
 	out := store.NewRun(cfg.Destination, time.Now())
-	logger.Info("starting run", zap.String("dir", out.Dir()), zap.Int("jobs", len(cfg.Jobs)))
+	logger.Info("starting run", zap.String("dir", out.Dir()), zap.Int("jobs", len(jobs)))
 
 	start := time.Now()
-	for _, j := range cfg.Jobs {
+	for _, j := range jobs {
 		if err := job.Run(ctx, logger, client, out, j); err != nil {
 			return fmt.Errorf("job %q: %w", j.Name, err)
 		}
 	}
 
 	logger.Info("run complete",
-		zap.Int("jobs", len(cfg.Jobs)),
+		zap.Int("jobs", len(jobs)),
 		zap.String("dir", out.Dir()),
 		zap.Duration("duration", time.Since(start).Round(time.Millisecond)),
 	)
