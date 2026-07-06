@@ -16,5 +16,6 @@ jobs:
   - name: <NAME>
     command: docker exec <CONTAINER> pg_dump -U postgres <DB-NAME>
     output: <FILENAME>.<EXT>
+    timeout: 2m # per-job limit, e.g. "90s", "30m", "2h" (default: 2m, max: 12h)
 
   # ...

@@ -6,8 +6,14 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
+)
+
+const (
+	defaultJobTimeout = 2 * time.Minute
+	maxJobTimeout     = 12 * time.Hour
 )
 
 type Config struct {
@@ -30,9 +36,26 @@ type Log struct {
 
 // Job is a remote command whose stdout is captured into a local file.
 type Job struct {
-	Name    string `yaml:"name"`
-	Command string `yaml:"command"`
-	Output  string `yaml:"output"`
+	Name    string   `yaml:"name"`
+	Command string   `yaml:"command"`
+	Output  string   `yaml:"output"`
+	Timeout Duration `yaml:"timeout"`
+}
+
+// Duration is a time.Duration that unmarshals from YAML strings like "30m".
+type Duration time.Duration
+
+func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
+	var s string
+	if err := node.Decode(&s); err != nil {
+		return err
+	}
+	v, err := time.ParseDuration(s)
+	if err != nil {
+		return fmt.Errorf("invalid duration %q: %w", s, err)
+	}
+	*d = Duration(v)
+	return nil
 }
 
 func Load(path string) (*Config, error) {
@@ -54,6 +77,11 @@ func Parse(data []byte) (*Config, error) {
 
 	if cfg.SSH.Port == 0 {
 		cfg.SSH.Port = 22
+	}
+	for i := range cfg.Jobs {
+		if cfg.Jobs[i].Timeout == 0 {
+			cfg.Jobs[i].Timeout = Duration(defaultJobTimeout)
+		}
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -106,6 +134,9 @@ func (j *Job) validate() error {
 	// output is joined into the run directory, so it must be a bare filename
 	if strings.ContainsAny(j.Output, `/\`) {
 		return fmt.Errorf("output %q must be a filename, not a path", j.Output)
+	}
+	if d := time.Duration(j.Timeout); d <= 0 || d > maxJobTimeout {
+		return fmt.Errorf("timeout %s must be between 0 and %s", d, maxJobTimeout)
 	}
 	return nil
 }

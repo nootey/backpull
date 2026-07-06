@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 const validYAML = `
@@ -84,6 +85,33 @@ jobs:
 	}
 	if cfg.SSH.Port != 22 {
 		t.Errorf("SSH.Port = %d, want default 22", cfg.SSH.Port)
+	}
+}
+
+func TestParseJobTimeout(t *testing.T) {
+	yaml := `
+ssh:
+  host: server.example.com
+  user: deploy
+destination: /backups
+jobs:
+  - name: postgres
+    command: docker exec postgres pg_dump -U app appdb
+    output: appdb.sql
+    timeout: 30m
+  - name: caddy
+    command: tar -czf - -C /srv/caddy .
+    output: caddy.tar.gz
+`
+	cfg, err := Parse([]byte(yaml))
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if got := time.Duration(cfg.Jobs[0].Timeout); got != 30*time.Minute {
+		t.Errorf("Jobs[0].Timeout = %s, want 30m", got)
+	}
+	if got := time.Duration(cfg.Jobs[1].Timeout); got != 2*time.Minute {
+		t.Errorf("Jobs[1].Timeout = %s, want default 2m", got)
 	}
 }
 
@@ -252,6 +280,51 @@ jobs:
     output: ../caddy.tar.gz
 `,
 			wantErr: "must be a filename",
+		},
+		{
+			name: "negative timeout",
+			yaml: `
+ssh:
+  host: server.example.com
+  user: deploy
+destination: /backups
+jobs:
+  - name: caddy
+    command: tar -czf - -C /srv/caddy .
+    output: caddy.tar.gz
+    timeout: -5m
+`,
+			wantErr: "timeout",
+		},
+		{
+			name: "timeout over maximum",
+			yaml: `
+ssh:
+  host: server.example.com
+  user: deploy
+destination: /backups
+jobs:
+  - name: caddy
+    command: tar -czf - -C /srv/caddy .
+    output: caddy.tar.gz
+    timeout: 13h
+`,
+			wantErr: "timeout",
+		},
+		{
+			name: "unparseable timeout",
+			yaml: `
+ssh:
+  host: server.example.com
+  user: deploy
+destination: /backups
+jobs:
+  - name: caddy
+    command: tar -czf - -C /srv/caddy .
+    output: caddy.tar.gz
+    timeout: fast
+`,
+			wantErr: "invalid duration",
 		},
 		{
 			name: "unknown key",

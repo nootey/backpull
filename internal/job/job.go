@@ -2,6 +2,7 @@ package job
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -31,9 +32,19 @@ func Run(ctx context.Context, log *zap.Logger, runner CommandRunner, run *store.
 		zap.String("output", f.Path()),
 	)
 
+	timeout := time.Duration(j.Timeout)
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
 	out := &countingWriter{w: f}
 	start := time.Now()
 	if err := runner.RunCommand(ctx, j.Command, out); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("timed out after %s", timeout)
+		}
 		return err
 	}
 	if out.n == 0 {

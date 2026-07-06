@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -76,6 +77,37 @@ func TestRunCommandError(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "postgres.sql.partial")); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf(".partial left behind after failed command (stat err: %v)", err)
+	}
+}
+
+// hangingRunner blocks until the context is cancelled, like a hung remote command.
+type hangingRunner struct{}
+
+func (hangingRunner) RunCommand(ctx context.Context, _ string, stdout io.Writer) error {
+	if _, err := io.WriteString(stdout, "partial output"); err != nil {
+		return err
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestRunTimeout(t *testing.T) {
+	dest := t.TempDir()
+	run := store.NewRun(dest, testTime)
+	j := testJob
+	j.Timeout = config.Duration(50 * time.Millisecond)
+
+	err := Run(context.Background(), zap.NewNop(), hangingRunner{}, run, j)
+	if err == nil {
+		t.Fatal("Run succeeded, want timeout error")
+	}
+	if !strings.Contains(err.Error(), "timed out after 50ms") {
+		t.Errorf("error = %q, want it to mention timing out", err)
+	}
+
+	final := filepath.Join(dest, "2026-07-06_153012", "postgres", "postgres.sql")
+	if _, err := os.Stat(final); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("final file exists after timeout (stat err: %v)", err)
 	}
 }
 
