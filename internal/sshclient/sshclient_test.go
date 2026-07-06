@@ -86,7 +86,7 @@ func newTestServer(t *testing.T) *testServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { l.Close() })
+	t.Cleanup(func() { _ = l.Close() })
 	go serveSSH(l, conf)
 
 	addr := l.Addr().String()
@@ -116,7 +116,7 @@ func serveSSH(l net.Listener, conf *ssh.ServerConfig) {
 			go ssh.DiscardRequests(reqs)
 			for newCh := range chans {
 				if newCh.ChannelType() != "session" {
-					newCh.Reject(ssh.UnknownChannelType, "unsupported")
+					_ = newCh.Reject(ssh.UnknownChannelType, "unsupported")
 					continue
 				}
 				ch, sessReqs, err := newCh.Accept()
@@ -130,17 +130,17 @@ func serveSSH(l net.Listener, conf *ssh.ServerConfig) {
 }
 
 func handleSession(ch ssh.Channel, reqs <-chan *ssh.Request) {
-	defer ch.Close()
+	defer func() { _ = ch.Close() }()
 	for req := range reqs {
 		if req.Type != "exec" {
-			req.Reply(false, nil)
+			_ = req.Reply(false, nil)
 			continue
 		}
 		var payload struct{ Command string }
-		ssh.Unmarshal(req.Payload, &payload)
-		req.Reply(true, nil)
+		_ = ssh.Unmarshal(req.Payload, &payload)
+		_ = req.Reply(true, nil)
 		status := runFakeCommand(payload.Command, ch)
-		ch.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{status}))
+		_, _ = ch.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{status}))
 		return
 	}
 }
@@ -148,10 +148,10 @@ func handleSession(ch ssh.Channel, reqs <-chan *ssh.Request) {
 func runFakeCommand(cmd string, ch ssh.Channel) uint32 {
 	switch {
 	case strings.HasPrefix(cmd, "echo "):
-		io.WriteString(ch, strings.TrimPrefix(cmd, "echo ")+"\n")
+		_, _ = io.WriteString(ch, strings.TrimPrefix(cmd, "echo ")+"\n")
 		return 0
 	case cmd == "fail":
-		io.WriteString(ch.Stderr(), "boom\n")
+		_, _ = io.WriteString(ch.Stderr(), "boom\n")
 		return 3
 	case cmd == "hang":
 		time.Sleep(30 * time.Second)
@@ -179,7 +179,7 @@ func dialTestServer(t *testing.T, srv *testServer) *Client {
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	t.Cleanup(func() { c.Close() })
+	t.Cleanup(func() { _ = c.Close() })
 	return c
 }
 
@@ -245,7 +245,7 @@ func TestConnectSingleKnownHostKeyType(t *testing.T) {
 			if err != nil {
 				t.Fatalf("connect with only %s in known_hosts: %v", alg, err)
 			}
-			c.Close()
+			_ = c.Close()
 		})
 	}
 }
@@ -323,7 +323,7 @@ func TestConnectPassphrasePrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	var out bytes.Buffer
 	if err := c.RunCommand(context.Background(), "echo hi", &out); err != nil {

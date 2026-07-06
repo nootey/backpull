@@ -1,0 +1,40 @@
+name: "Lint"
+
+on:
+  push:
+    paths-ignore:
+      - 'docs/**'
+      - 'deployments/**'
+      - '*.md'
+    branches:
+      - main
+      - development
+  workflow_dispatch:
+
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'deployments/**'
+      - '*.md'
+    branches:
+      - main
+    types: [ opened, synchronize ]
+
+jobs:
+  lint:
+    name: Lint Go code
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+          args: --timeout=3m

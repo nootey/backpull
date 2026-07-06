@@ -80,7 +80,7 @@ func (c *Client) RunCommand(ctx context.Context, command string, stdout io.Write
 	if err != nil {
 		return fmt.Errorf("opening session: %w", err)
 	}
-	defer sess.Close()
+	defer func() { _ = sess.Close() }()
 
 	var stderr limitedBuffer
 	sess.Stdout = stdout
@@ -95,7 +95,7 @@ func (c *Client) RunCommand(ctx context.Context, command string, stdout io.Write
 
 	select {
 	case <-ctx.Done():
-		sess.Close()
+		_ = sess.Close()
 		<-done
 		return ctx.Err()
 	case err := <-done:

@@ -1,0 +1,39 @@
+name: "Run tests"
+
+on:
+  push:
+    paths-ignore:
+      - 'docs/**'
+      - 'deployments/**'
+      - '*.md'
+    branches:
+      - main
+
+  workflow_dispatch:
+
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'deployments/**'
+      - '*.md'
+    branches:
+      - main
+      - development
+    types: [ opened, synchronize, reopened ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test -count=1 ./...

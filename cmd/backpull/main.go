@@ -35,7 +35,7 @@ func run(cfgPath string, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	command := "uname -a"
 	if len(args) > 0 {
