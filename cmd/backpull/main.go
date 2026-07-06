@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"time"
 
 	"go.uber.org/zap"
@@ -21,15 +22,16 @@ import (
 func main() {
 	cfgPath := flag.String("config", "config.yaml", "path to config file")
 	only := flag.String("only", "", "comma-separated job names to run (default: all)")
+	dryRun := flag.Bool("dry-run", false, "print what would run without connecting")
 	flag.Parse()
 
-	if err := run(*cfgPath, *only); err != nil {
+	if err := run(*cfgPath, *only, *dryRun); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func run(cfgPath, only string) error {
+func run(cfgPath, only string, dryRun bool) error {
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return err
@@ -38,6 +40,15 @@ func run(cfgPath, only string) error {
 	jobs, err := util.FilterJobs(cfg.Jobs, only)
 	if err != nil {
 		return err
+	}
+
+	if dryRun {
+		out := store.NewRun(cfg.Destination, time.Now())
+		fmt.Printf("dry run: %d job(s) would run on %s@%s:%d\n", len(jobs), cfg.SSH.User, cfg.SSH.Host, cfg.SSH.Port)
+		for _, j := range jobs {
+			fmt.Printf("  %s\n    command: %s\n    output:  %s\n", j.Name, j.Command, filepath.Join(out.Dir(), j.Name, j.Output))
+		}
+		return nil
 	}
 
 	logger, err := logging.InitLogger(cfg.Log.Level)

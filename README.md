@@ -28,6 +28,13 @@ comma-separated job names:
 backpull -only grafana,db
 ```
 
+To check a config without connecting, pass `-dry-run` — it prints each job's
+command and target path, then exits:
+
+```
+backpull -dry-run
+```
+
 See [config.example.yaml](config.example.yaml) for a full example:
 
 
