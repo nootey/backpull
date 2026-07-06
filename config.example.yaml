@@ -1,0 +1,12 @@
+ssh:
+  host: <IP>
+  user: <USERNAME>
+  port: 22
+  key_file: <PATH>
+
+destination: <PATH>
+
+services:
+  - name: <NAME>
+    type: config_dir
+    path: <PATH>
