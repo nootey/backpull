@@ -4,9 +4,16 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"backpull/internal/config"
 )
+
+// ExpandOutput replaces the {date} placeholder in an output filename with
+// now formatted as 2006-01-02.
+func ExpandOutput(output string, now time.Time) string {
+	return strings.ReplaceAll(output, "{date}", now.Format("2006-01-02"))
+}
 
 func FilterJobs(jobs []config.Job, only string) ([]config.Job, error) {
 	if only == "" {

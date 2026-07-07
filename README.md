@@ -63,3 +63,8 @@ Every job needs a unique `name`, a `command`, and an `output` filename (backpull
 - **Logging** goes to stdout and `logs/app.log`. Set `log.level: debug` to see
   every remote command as it executes; commands that write to stderr but still
   succeed (e.g. `pg_dump` warnings) are logged as warnings.
+
+## Planned
+- Currently, only `{date}` parsing is supported to dynamically overwrite the output names per job
+  - Support for more formats could be added
+- Multiple hosts

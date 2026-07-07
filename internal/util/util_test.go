@@ -3,9 +3,20 @@ package util
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"backpull/internal/config"
 )
+
+func TestExpandOutput(t *testing.T) {
+	now := time.Date(2026, 7, 1, 15, 30, 12, 0, time.UTC)
+	if got := ExpandOutput("{date}.sql", now); got != "2026-07-01.sql" {
+		t.Errorf("ExpandOutput({date}.sql) = %q, want %q", got, "2026-07-01.sql")
+	}
+	if got := ExpandOutput("wealth-warden.sql", now); got != "wealth-warden.sql" {
+		t.Errorf("ExpandOutput without placeholder = %q, want unchanged", got)
+	}
+}
 
 func TestFilterJobs(t *testing.T) {
 	jobs := []config.Job{

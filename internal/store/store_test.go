@@ -102,6 +102,40 @@ func TestCreateExistingFinal(t *testing.T) {
 	}
 }
 
+func TestCreateInMissingDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "unmounted")
+	if _, err := CreateIn(dir, "wealth-warden.sql"); err == nil {
+		t.Fatal("CreateIn succeeded on missing dir, want error")
+	}
+}
+
+func TestCreateInOverwritesExisting(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "2026-07-01.sql"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	f, err := CreateIn(dir, "2026-07-01.sql")
+	if err != nil {
+		t.Fatalf("CreateIn returned error: %v", err)
+	}
+	if _, err := f.Write([]byte("new dump")); err != nil {
+		t.Fatalf("Write returned error: %v", err)
+	}
+	if err := f.Commit(); err != nil {
+		t.Fatalf("Commit returned error: %v", err)
+	}
+	_ = f.Close()
+
+	data, err := os.ReadFile(filepath.Join(dir, "2026-07-01.sql"))
+	if err != nil {
+		t.Fatalf("reading final file: %v", err)
+	}
+	if string(data) != "new dump" {
+		t.Errorf("final file contents = %q, want %q", data, "new dump")
+	}
+}
+
 func TestTwoServicesShareRun(t *testing.T) {
 	dest := t.TempDir()
 	run := NewRun(dest, testTime)

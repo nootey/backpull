@@ -42,11 +42,20 @@ func run(cfgPath, only string, dryRun bool) error {
 		return err
 	}
 
+	now := time.Now()
+	for i := range jobs {
+		jobs[i].Output = util.ExpandOutput(jobs[i].Output, now)
+	}
+
 	if dryRun {
-		out := store.NewRun(cfg.Destination, time.Now())
+		out := store.NewRun(cfg.Destination, now)
 		fmt.Printf("dry run: %d job(s) would run on %s@%s:%d\n", len(jobs), cfg.SSH.User, cfg.SSH.Host, cfg.SSH.Port)
 		for _, j := range jobs {
-			fmt.Printf("  %s\n    command: %s\n    output:  %s\n", j.Name, j.Command, filepath.Join(out.Dir(), j.Name, j.Output))
+			path := filepath.Join(out.Dir(), j.Name, j.Output)
+			if j.OutputDir != "" {
+				path = filepath.Join(j.OutputDir, j.Output)
+			}
+			fmt.Printf("  %s\n    command: %s\n    output:  %s\n", j.Name, j.Command, path)
 		}
 		return nil
 	}
@@ -68,8 +77,16 @@ func run(cfgPath, only string, dryRun bool) error {
 	defer func() { _ = client.Close() }()
 	logger.Info("connected")
 
-	out := store.NewRun(cfg.Destination, time.Now())
-	logger.Info("starting run", zap.String("dir", out.Dir()), zap.Int("jobs", len(jobs)))
+	out := store.NewRun(cfg.Destination, now)
+	// jobs with output_dir bypass the run dir; logging it then is misleading
+	dirField := zap.Skip()
+	for _, j := range jobs {
+		if j.OutputDir == "" {
+			dirField = zap.String("dir", out.Dir())
+			break
+		}
+	}
+	logger.Info("starting run", dirField, zap.Int("jobs", len(jobs)))
 
 	type result struct {
 		name string
@@ -102,7 +119,7 @@ func run(cfgPath, only string, dryRun bool) error {
 	logger.Info("run complete",
 		zap.Int("jobs", len(results)),
 		zap.Int("failed", failed),
-		zap.String("dir", out.Dir()),
+		dirField,
 		zap.Duration("duration", time.Since(start).Round(time.Millisecond)),
 	)
 	if failed > 0 {

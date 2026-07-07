@@ -115,6 +115,38 @@ jobs:
 	}
 }
 
+func TestParseJobOutputDir(t *testing.T) {
+	yaml := `
+ssh:
+  host: server.example.com
+  user: deploy
+destination: /backups
+jobs:
+  - name: wealth-warden
+    command: docker exec wealth-warden-db-1 pg_dump -U postgres wealth_warden
+    output: "{date}.sql"
+    output_dir: H:\_backup\_current\wealth_warden
+  - name: caddy
+    command: tar -czf - -C /srv/caddy .
+    output: caddy.tar.gz
+  - name: wealth-warden-alt
+    command: docker exec wealth-warden-db-1 pg_dump -U postgres wealth_warden
+    output: "{date}.sql"
+    output_dir: H:\_backup\_alt\wealth_warden
+`
+	// same output filename in a different output_dir must not be a collision
+	cfg, err := Parse([]byte(yaml))
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if got := cfg.Jobs[0].OutputDir; got != `H:\_backup\_current\wealth_warden` {
+		t.Errorf("Jobs[0].OutputDir = %q, want %q", got, `H:\_backup\_current\wealth_warden`)
+	}
+	if got := cfg.Jobs[1].OutputDir; got != "" {
+		t.Errorf("Jobs[1].OutputDir = %q, want empty", got)
+	}
+}
+
 func TestParseErrors(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -280,6 +312,39 @@ jobs:
     output: ../caddy.tar.gz
 `,
 			wantErr: "must be a filename",
+		},
+		{
+			name: "unknown placeholder in output",
+			yaml: `
+ssh:
+  host: server.example.com
+  user: deploy
+destination: /backups
+jobs:
+  - name: caddy
+    command: tar -czf - -C /srv/caddy .
+    output: "{daet}.tar.gz"
+`,
+			wantErr: "unknown placeholder {daet}",
+		},
+		{
+			name: "duplicate output_dir path",
+			yaml: `
+ssh:
+  host: server.example.com
+  user: deploy
+destination: /backups
+jobs:
+  - name: wealth-warden
+    command: docker exec wealth-warden-db-1 pg_dump -U postgres wealth_warden
+    output: "{date}.sql"
+    output_dir: /backups/current
+  - name: wealth-warden-again
+    command: docker exec wealth-warden-db-1 pg_dump -U postgres wealth_warden
+    output: "{date}.sql"
+    output_dir: /backups/current
+`,
+			wantErr: "already used by job",
 		},
 		{
 			name: "negative timeout",

@@ -5,11 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
+
+// placeholders in output names; expansion happens in util.ExpandOutput
+var placeholderRe = regexp.MustCompile(`\{[^{}]*\}`)
 
 const (
 	defaultJobTimeout = 2 * time.Minute
@@ -40,6 +45,9 @@ type Job struct {
 	Command string   `yaml:"command"`
 	Output  string   `yaml:"output"`
 	Timeout Duration `yaml:"timeout"`
+	// OutputDir, when set, receives the output file directly, bypassing the
+	// destination's <timestamp>/<name> layout. It must already exist.
+	OutputDir string `yaml:"output_dir"`
 }
 
 // Duration is a time.Duration that unmarshals from YAML strings like "30m".
@@ -108,6 +116,7 @@ func (c *Config) validate() error {
 	}
 
 	seen := make(map[string]bool, len(c.Jobs))
+	seenPath := make(map[string]string) // cleaned output_dir path -> job name
 	for i, j := range c.Jobs {
 		if j.Name == "" {
 			return fmt.Errorf("jobs[%d]: name is required", i)
@@ -119,6 +128,16 @@ func (c *Config) validate() error {
 
 		if err := j.validate(); err != nil {
 			return fmt.Errorf("job %q: %w", j.Name, err)
+		}
+
+		// jobs without output_dir land in <timestamp>/<name>/, so unique
+		// names already keep them apart; only output_dir jobs can collide
+		if j.OutputDir != "" {
+			p := filepath.Clean(filepath.Join(j.OutputDir, j.Output))
+			if prev, ok := seenPath[p]; ok {
+				return fmt.Errorf("job %q: output_dir path %s already used by job %q", j.Name, p, prev)
+			}
+			seenPath[p] = j.Name
 		}
 	}
 	return nil
@@ -134,6 +153,11 @@ func (j *Job) validate() error {
 	// output is joined into the run directory, so it must be a bare filename
 	if strings.ContainsAny(j.Output, `/\`) {
 		return fmt.Errorf("output %q must be a filename, not a path", j.Output)
+	}
+	for _, p := range placeholderRe.FindAllString(j.Output, -1) {
+		if p != "{date}" {
+			return fmt.Errorf("output %q contains unknown placeholder %s (supported: {date})", j.Output, p)
+		}
 	}
 	if d := time.Duration(j.Timeout); d <= 0 || d > maxJobTimeout {
 		return fmt.Errorf("timeout %s must be between 0 and %s", d, maxJobTimeout)
