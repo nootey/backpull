@@ -33,8 +33,25 @@ func (r *Run) Create(job, filename string) (*File, error) {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("checking %s: %w", final, err)
 	}
+	return create(final, os.O_EXCL)
+}
 
-	f, err := os.OpenFile(final+".partial", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+// CreateIn writes filename into an existing directory, replacing a previous
+// file of the same name on Commit. The directory is never created: a missing
+// dir (e.g. an unmounted backup drive) must fail rather than write elsewhere.
+func CreateIn(dir, filename string) (*File, error) {
+	info, err := os.Stat(dir)
+	if err != nil {
+		return nil, fmt.Errorf("output_dir: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("output_dir %s is not a directory", dir)
+	}
+	return create(filepath.Join(dir, filename), os.O_TRUNC)
+}
+
+func create(final string, flag int) (*File, error) {
+	f, err := os.OpenFile(final+".partial", os.O_WRONLY|os.O_CREATE|flag, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("creating %s.partial: %w", final, err)
 	}

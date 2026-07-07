@@ -20,7 +20,13 @@ type CommandRunner interface {
 // Run executes the job's command verbatim on the remote host and streams its
 // stdout into the job's output file.
 func Run(ctx context.Context, log *zap.Logger, runner CommandRunner, run *store.Run, j config.Job) error {
-	f, err := run.Create(j.Name, j.Output)
+	var f *store.File
+	var err error
+	if j.OutputDir != "" {
+		f, err = store.CreateIn(j.OutputDir, j.Output)
+	} else {
+		f, err = run.Create(j.Name, j.Output)
+	}
 	if err != nil {
 		return err
 	}
