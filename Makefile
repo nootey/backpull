@@ -1,4 +1,9 @@
-.PHONY: lint test
+.PHONY: run lint test
+
+default: run
+
+run:
+	go run ./cmd/backpull
 
 test:
 	go test -count=1 ./...
