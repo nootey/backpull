@@ -10,11 +10,12 @@ import (
 )
 
 type Run struct {
-	dir string
+	destination string
+	dir         string
 }
 
 func NewRun(destination string, now time.Time) *Run {
-	return &Run{dir: filepath.Join(destination, now.Format("2006-01-02_150405"))}
+	return &Run{destination: destination, dir: filepath.Join(destination, now.Format("2006-01-02_150405"))}
 }
 
 func (r *Run) Dir() string {
@@ -22,6 +23,14 @@ func (r *Run) Dir() string {
 }
 
 func (r *Run) Create(job, filename string) (*File, error) {
+	info, err := os.Stat(r.destination)
+	if err != nil {
+		return nil, fmt.Errorf("destination: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("destination %s is not a directory", r.destination)
+	}
+
 	dir := filepath.Join(r.dir, job)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("creating %s: %w", dir, err)

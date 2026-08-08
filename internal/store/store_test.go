@@ -102,6 +102,15 @@ func TestCreateExistingFinal(t *testing.T) {
 	}
 }
 
+func TestCreateMissingDestination(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "unmounted")
+	run := NewRun(dest, testTime)
+
+	if _, err := run.Create("jellyfin", "jellyfin.sql.gz"); err == nil {
+		t.Fatal("Create succeeded on missing destination, want error")
+	}
+}
+
 func TestCreateInMissingDir(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "unmounted")
 	if _, err := CreateIn(dir, "wealth-warden.sql"); err == nil {
