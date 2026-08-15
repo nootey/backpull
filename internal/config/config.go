@@ -52,6 +52,12 @@ type Job struct {
 	OutputDir string `yaml:"output_dir"`
 	// Manual jobs are skipped unless named explicitly via -only.
 	Manual bool `yaml:"manual"`
+	// Local jobs run on this machine instead of the remote host.
+	Local bool `yaml:"local"`
+	// OutputRoot is the config's output_path, set only for jobs whose
+	// output_dir was built from {output_path}. Those directories may be
+	// created, because the root existing proves the drive is mounted.
+	OutputRoot string `yaml:"-"`
 }
 
 type Duration time.Duration
@@ -100,6 +106,7 @@ func Parse(data []byte) (*Config, error) {
 				return nil, fmt.Errorf("job %q: output_dir uses {output_path}, but output_path is not set", cfg.Jobs[i].Name)
 			}
 			cfg.Jobs[i].OutputDir = strings.ReplaceAll(cfg.Jobs[i].OutputDir, "{output_path}", cfg.OutputPath)
+			cfg.Jobs[i].OutputRoot = cfg.OutputPath
 		}
 	}
 
@@ -109,15 +116,28 @@ func Parse(data []byte) (*Config, error) {
 	return &cfg, nil
 }
 
+// HasRemoteJobs reports whether any job needs an SSH connection.
+func HasRemoteJobs(jobs []Job) bool {
+	for _, j := range jobs {
+		if !j.Local {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *Config) validate() error {
-	if c.SSH.Host == "" {
-		return errors.New("ssh.host is required")
-	}
-	if c.SSH.User == "" {
-		return errors.New("ssh.user is required")
-	}
-	if c.SSH.Port < 1 || c.SSH.Port > 65535 {
-		return fmt.Errorf("ssh.port %d is out of range 1-65535", c.SSH.Port)
+	// a config of only local jobs never connects, so ssh may be omitted
+	if HasRemoteJobs(c.Jobs) {
+		if c.SSH.Host == "" {
+			return errors.New("ssh.host is required")
+		}
+		if c.SSH.User == "" {
+			return errors.New("ssh.user is required")
+		}
+		if c.SSH.Port < 1 || c.SSH.Port > 65535 {
+			return fmt.Errorf("ssh.port %d is out of range 1-65535", c.SSH.Port)
+		}
 	}
 	if c.Destination == "" {
 		return errors.New("destination is required")

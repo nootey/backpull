@@ -118,6 +118,55 @@ func TestCreateInMissingDir(t *testing.T) {
 	}
 }
 
+func TestCreateInUnderCreatesMissingDirs(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "notes", "2027")
+
+	f, err := CreateInUnder(root, dir, "2027-01-01.tar.gz")
+	if err != nil {
+		t.Fatalf("CreateInUnder returned error: %v", err)
+	}
+	if _, err := f.Write([]byte("archive")); err != nil {
+		t.Fatalf("Write returned error: %v", err)
+	}
+	if err := f.Commit(); err != nil {
+		t.Fatalf("Commit returned error: %v", err)
+	}
+	_ = f.Close()
+
+	data, err := os.ReadFile(filepath.Join(dir, "2027-01-01.tar.gz"))
+	if err != nil {
+		t.Fatalf("reading final file: %v", err)
+	}
+	if string(data) != "archive" {
+		t.Errorf("contents = %q, want %q", data, "archive")
+	}
+}
+
+// the root standing in for a mounted drive must still be checked
+func TestCreateInUnderMissingRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "unmounted")
+	dir := filepath.Join(root, "notes", "2027")
+
+	if _, err := CreateInUnder(root, dir, "2027-01-01.tar.gz"); err == nil {
+		t.Fatal("CreateInUnder succeeded on missing root, want error")
+	}
+	if _, err := os.Stat(root); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("root was created despite being missing (stat err: %v)", err)
+	}
+}
+
+func TestCreateInUnderRootIsFile(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "notafile")
+	if err := os.WriteFile(root, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := CreateInUnder(root, filepath.Join(root, "notes"), "x.tar.gz"); err == nil {
+		t.Fatal("CreateInUnder succeeded with a file as root, want error")
+	}
+}
+
 func TestCreateInOverwritesExisting(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "2026-07-01.sql"), []byte("old"), 0o644); err != nil {

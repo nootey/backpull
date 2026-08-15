@@ -80,6 +80,44 @@ func TestRunCommandError(t *testing.T) {
 	}
 }
 
+// a job whose output_dir came from {output_path} gets its directories created,
+// because output_root existing already proves the drive is mounted
+func TestRunCreatesDirsUnderOutputRoot(t *testing.T) {
+	root := t.TempDir()
+	j := testJob
+	j.OutputRoot = root
+	j.OutputDir = filepath.Join(root, "notes", "2027")
+
+	runner := &fakeRunner{output: []byte("archive")}
+	if err := Run(context.Background(), zap.NewNop(), runner, store.NewRun(t.TempDir(), testTime), j); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(j.OutputDir, j.Output))
+	if err != nil {
+		t.Fatalf("reading final file: %v", err)
+	}
+	if string(data) != "archive" {
+		t.Errorf("contents = %q, want %q", data, "archive")
+	}
+}
+
+func TestRunMissingOutputRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "unmounted")
+	j := testJob
+	j.OutputRoot = root
+	j.OutputDir = filepath.Join(root, "notes", "2027")
+
+	runner := &fakeRunner{output: []byte("archive")}
+	err := Run(context.Background(), zap.NewNop(), runner, store.NewRun(t.TempDir(), testTime), j)
+	if err == nil {
+		t.Fatal("Run succeeded with a missing output_root, want error")
+	}
+	if runner.gotCommand != "" {
+		t.Error("command ran despite the drive being unmounted; the output file is created first")
+	}
+}
+
 // hangingRunner blocks until the context is cancelled, like a hung remote command.
 type hangingRunner struct{}
 

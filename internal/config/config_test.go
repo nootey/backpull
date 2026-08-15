@@ -182,6 +182,13 @@ jobs:
 	if got := cfg.Jobs[1].OutputDir; got != "/backups/caddy" {
 		t.Errorf("Jobs[1].OutputDir = %q, want %q", got, "/backups/caddy")
 	}
+	// only {output_path} jobs may have their directories created
+	if got := cfg.Jobs[0].OutputRoot; got != "/mnt/hdd/_backup" {
+		t.Errorf("Jobs[0].OutputRoot = %q, want %q", got, "/mnt/hdd/_backup")
+	}
+	if got := cfg.Jobs[1].OutputRoot; got != "" {
+		t.Errorf("Jobs[1].OutputRoot = %q, want empty for a literal output_dir", got)
+	}
 }
 
 func TestParseJobManual(t *testing.T) {
@@ -211,6 +218,39 @@ jobs:
 	}
 }
 
+func TestParseJobLocal(t *testing.T) {
+	yaml := `
+destination: /backups
+output_path: /mnt/hdd/_backup
+jobs:
+  - name: notes
+    local: true
+    command: tar -czf - -C /home/user/documents notes
+    output: "{date}.tar.gz"
+    output_dir: "{output_path}/notes/{year}"
+`
+	// a config of only local jobs never connects, so ssh may be omitted
+	cfg, err := Parse([]byte(yaml))
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if !cfg.Jobs[0].Local {
+		t.Errorf("Jobs[0].Local = false, want true")
+	}
+	if HasRemoteJobs(cfg.Jobs) {
+		t.Errorf("HasRemoteJobs = true, want false for an all-local config")
+	}
+}
+
+func TestHasRemoteJobs(t *testing.T) {
+	if !HasRemoteJobs([]Job{{Name: "notes", Local: true}, {Name: "db"}}) {
+		t.Errorf("HasRemoteJobs = false, want true when one job is remote")
+	}
+	if HasRemoteJobs(nil) {
+		t.Errorf("HasRemoteJobs(nil) = true, want false")
+	}
+}
+
 func TestParseErrors(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -224,6 +264,21 @@ ssh:
   user: deploy
 destination: /backups
 jobs:
+  - name: caddy
+    command: tar -czf - -C /srv/caddy .
+    output: caddy.tar.gz
+`,
+			wantErr: "ssh.host",
+		},
+		{
+			name: "ssh omitted but a job is remote",
+			yaml: `
+destination: /backups
+jobs:
+  - name: notes
+    local: true
+    command: tar -czf - -C /home/user/documents notes
+    output: notes.tar.gz
   - name: caddy
     command: tar -czf - -C /srv/caddy .
     output: caddy.tar.gz

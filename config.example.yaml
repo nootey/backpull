@@ -1,4 +1,4 @@
-ssh:
+ssh: # omit entirely if every job is local
   host: <IP>
   user: <USER>
   port: 22
@@ -9,17 +9,27 @@ log:
 
 # local - directory where general run output lands
 destination: <PATH>
-# variable for output_dir (overrides destination)
+# {output_path} for use in a job's output_dir (overrides destination)
+# must already exist; directories under it are created as needed
 output_path: <PATH>
 
-# each job runs a command on the remote host and captures its stdout
-# into <destination>/<timestamp>/<name>/<output>
+# each job runs a command and captures its stdout into
+# <destination>/<timestamp>/<name>/<output>; jobs run on the remote host
+# unless marked `local: true`, which runs them on this machine
 jobs:
+  # SSH
   - name: <NAME>
     command: docker exec <CONTAINER> pg_dump -U postgres <DB-NAME>
     output: <FILENAME>.<EXT>
     timeout: 2m # per-job limit, e.g. "90s", "30m", "2h" (default: 2m, max: 12h)
     # manual: true # manual jobs are excluded from full runs, must be ran with -only flag
     # output_dir: <PATH> # write straight into this existing dir
-
+    #                      (use {output_path}/... to have it created for you)
   # ...
+
+  # Local
+  - name: <NAME>
+    local: true
+    command: tar -czf - -C <PATH> <FILE>
+    output: "{date}.tar.gz"
+    output_dir: "{output_path}/<PATH>/{year}"

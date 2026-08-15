@@ -13,6 +13,7 @@ import (
 
 	"backpull/internal/config"
 	"backpull/internal/job"
+	"backpull/internal/localclient"
 	"backpull/internal/sshclient"
 	"backpull/internal/store"
 	"backpull/internal/util"
@@ -48,15 +49,25 @@ func run(cfgPath, only string, dryRun bool) error {
 		jobs[i].OutputDir = util.Expand(jobs[i].OutputDir, now)
 	}
 
+	needsSSH := config.HasRemoteJobs(jobs)
+
 	if dryRun {
 		out := store.NewRun(cfg.Destination, now)
-		fmt.Printf("dry run: %d job(s) would run on %s@%s:%d\n", len(jobs), cfg.SSH.User, cfg.SSH.Host, cfg.SSH.Port)
+		if needsSSH {
+			fmt.Printf("dry run: %d job(s), remote ones on %s@%s:%d\n", len(jobs), cfg.SSH.User, cfg.SSH.Host, cfg.SSH.Port)
+		} else {
+			fmt.Printf("dry run: %d job(s), all local\n", len(jobs))
+		}
 		for _, j := range jobs {
 			path := filepath.Join(out.Dir(), j.Name, j.Output)
 			if j.OutputDir != "" {
 				path = filepath.Join(j.OutputDir, j.Output)
 			}
-			fmt.Printf("  %s\n    command: %s\n    output:  %s\n", j.Name, j.Command, path)
+			where := "remote"
+			if j.Local {
+				where = "local"
+			}
+			fmt.Printf("  %s [%s]\n    command: %s\n    output:  %s\n", j.Name, where, j.Command, path)
 		}
 		return nil
 	}
@@ -70,13 +81,18 @@ func run(cfgPath, only string, dryRun bool) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	logger.Info("connecting", zap.String("host", cfg.SSH.Host), zap.String("user", cfg.SSH.User), zap.Int("port", cfg.SSH.Port))
-	client, err := sshclient.Connect(logger, cfg.SSH)
-	if err != nil {
-		return err
+	var remote job.CommandRunner
+	if needsSSH {
+		logger.Info("connecting", zap.String("host", cfg.SSH.Host), zap.String("user", cfg.SSH.User), zap.Int("port", cfg.SSH.Port))
+		client, err := sshclient.Connect(logger, cfg.SSH)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = client.Close() }()
+		logger.Info("connected")
+		remote = client
 	}
-	defer func() { _ = client.Close() }()
-	logger.Info("connected")
+	local := localclient.New(logger)
 
 	out := store.NewRun(cfg.Destination, now)
 	// jobs with output_dir bypass the run dir; logging it then is misleading
@@ -97,7 +113,11 @@ func run(cfgPath, only string, dryRun bool) error {
 	start := time.Now()
 	var results []result
 	for _, j := range jobs {
-		err := job.Run(ctx, logger, client, out, j)
+		runner := remote
+		if j.Local {
+			runner = local
+		}
+		err := job.Run(ctx, logger, runner, out, j)
 		if err != nil {
 			logger.Error("job failed", zap.String("job", j.Name), zap.Error(err))
 		}

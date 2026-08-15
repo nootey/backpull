@@ -59,6 +59,23 @@ func CreateIn(dir, filename string) (*File, error) {
 	return create(filepath.Join(dir, filename), os.O_TRUNC)
 }
 
+// CreateInUnder writes filename into dir, creating dir if needed. root must
+// already exist: it is the configured output_path, so an unmounted drive still
+// fails rather than creating the tree somewhere else.
+func CreateInUnder(root, dir, filename string) (*File, error) {
+	info, err := os.Stat(root)
+	if err != nil {
+		return nil, fmt.Errorf("output_path: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("output_path %s is not a directory", root)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("creating %s: %w", dir, err)
+	}
+	return create(filepath.Join(dir, filename), os.O_TRUNC)
+}
+
 func create(final string, flag int) (*File, error) {
 	f, err := os.OpenFile(final+".partial", os.O_WRONLY|os.O_CREATE|flag, 0o644)
 	if err != nil {
