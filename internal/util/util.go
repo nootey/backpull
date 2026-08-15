@@ -9,15 +9,23 @@ import (
 	"backpull/internal/config"
 )
 
-// ExpandOutput replaces the {date} placeholder in an output filename with
-// now formatted as 2006-01-02.
-func ExpandOutput(output string, now time.Time) string {
-	return strings.ReplaceAll(output, "{date}", now.Format("2006-01-02"))
+// Expand replaces {date} and {year} placeholders in a job's output or
+// output_dir with now formatted as 2006-01-02 and 2006, respectively.
+func Expand(s string, now time.Time) string {
+	s = strings.ReplaceAll(s, "{date}", now.Format("2006-01-02"))
+	s = strings.ReplaceAll(s, "{year}", now.Format("2006"))
+	return s
 }
 
 func FilterJobs(jobs []config.Job, only string) ([]config.Job, error) {
 	if only == "" {
-		return jobs, nil
+		var selected []config.Job
+		for _, j := range jobs {
+			if !j.Manual {
+				selected = append(selected, j)
+			}
+		}
+		return selected, nil
 	}
 
 	wanted := make(map[string]bool)

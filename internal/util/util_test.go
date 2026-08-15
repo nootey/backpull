@@ -8,13 +8,19 @@ import (
 	"backpull/internal/config"
 )
 
-func TestExpandOutput(t *testing.T) {
+func TestExpand(t *testing.T) {
 	now := time.Date(2026, 7, 1, 15, 30, 12, 0, time.UTC)
-	if got := ExpandOutput("{date}.sql", now); got != "2026-07-01.sql" {
-		t.Errorf("ExpandOutput({date}.sql) = %q, want %q", got, "2026-07-01.sql")
+	if got := Expand("{date}.sql", now); got != "2026-07-01.sql" {
+		t.Errorf("Expand({date}.sql) = %q, want %q", got, "2026-07-01.sql")
 	}
-	if got := ExpandOutput("wealth-warden.sql", now); got != "wealth-warden.sql" {
-		t.Errorf("ExpandOutput without placeholder = %q, want unchanged", got)
+	if got := Expand("wealth-warden.sql", now); got != "wealth-warden.sql" {
+		t.Errorf("Expand without placeholder = %q, want unchanged", got)
+	}
+	if got := Expand("/backups/{year}/homepage", now); got != "/backups/2026/homepage" {
+		t.Errorf("Expand({year}) = %q, want %q", got, "/backups/2026/homepage")
+	}
+	if got := Expand("/backups/{year}/{date}.tar.gz", now); got != "/backups/2026/2026-07-01.tar.gz" {
+		t.Errorf("Expand({year} and {date}) = %q, want %q", got, "/backups/2026/2026-07-01.tar.gz")
 	}
 }
 
@@ -71,6 +77,33 @@ func TestFilterJobs(t *testing.T) {
 	t.Run("only separators errors", func(t *testing.T) {
 		if _, err := FilterJobs(jobs, " , "); err == nil {
 			t.Fatal("expected error, got nil")
+		}
+	})
+}
+
+func TestFilterJobsManual(t *testing.T) {
+	jobs := []config.Job{
+		{Name: "db"},
+		{Name: "nextcloud-data", Manual: true},
+	}
+
+	t.Run("empty only skips manual jobs", func(t *testing.T) {
+		got, err := FilterJobs(jobs, "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(got) != 1 || got[0].Name != "db" {
+			t.Fatalf("got %v, want [db]", got)
+		}
+	})
+
+	t.Run("naming a manual job explicitly still runs it", func(t *testing.T) {
+		got, err := FilterJobs(jobs, "nextcloud-data")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(got) != 1 || got[0].Name != "nextcloud-data" {
+			t.Fatalf("got %v, want [nextcloud-data]", got)
 		}
 	})
 }

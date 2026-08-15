@@ -13,7 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// placeholders in output names; expansion happens in util.ExpandOutput
+// placeholders in output/output_dir; expansion happens in util.Expand
 var placeholderRe = regexp.MustCompile(`\{[^{}]*\}`)
 
 const (
@@ -25,7 +25,9 @@ type Config struct {
 	SSH         SSH    `yaml:"ssh"`
 	Log         Log    `yaml:"log"`
 	Destination string `yaml:"destination"`
-	Jobs        []Job  `yaml:"jobs"`
+	// OutputPath expands the {output_path} placeholder in a job's output_dir.
+	OutputPath string `yaml:"output_path"`
+	Jobs       []Job  `yaml:"jobs"`
 }
 
 type SSH struct {
@@ -39,7 +41,6 @@ type Log struct {
 	Level string `yaml:"level"`
 }
 
-// Job is a remote command whose stdout is captured into a local file.
 type Job struct {
 	Name    string   `yaml:"name"`
 	Command string   `yaml:"command"`
@@ -47,10 +48,18 @@ type Job struct {
 	Timeout Duration `yaml:"timeout"`
 	// OutputDir, when set, receives the output file directly, bypassing the
 	// destination's <timestamp>/<name> layout. It must already exist.
+	// Supports the same placeholders as Output.
 	OutputDir string `yaml:"output_dir"`
+	// Manual jobs are skipped unless named explicitly via -only.
+	Manual bool `yaml:"manual"`
+	// Local jobs run on this machine instead of the remote host.
+	Local bool `yaml:"local"`
+	// OutputRoot is the config's output_path, set only for jobs whose
+	// output_dir was built from {output_path}. Those directories may be
+	// created, because the root existing proves the drive is mounted.
+	OutputRoot string `yaml:"-"`
 }
 
-// Duration is a time.Duration that unmarshals from YAML strings like "30m".
 type Duration time.Duration
 
 func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
@@ -90,6 +99,15 @@ func Parse(data []byte) (*Config, error) {
 		if cfg.Jobs[i].Timeout == 0 {
 			cfg.Jobs[i].Timeout = Duration(defaultJobTimeout)
 		}
+		// {output_path} is static, so expand it here with parameters
+		// depend on run time and are expanded later by util.Expand
+		if strings.Contains(cfg.Jobs[i].OutputDir, "{output_path}") {
+			if cfg.OutputPath == "" {
+				return nil, fmt.Errorf("job %q: output_dir uses {output_path}, but output_path is not set", cfg.Jobs[i].Name)
+			}
+			cfg.Jobs[i].OutputDir = strings.ReplaceAll(cfg.Jobs[i].OutputDir, "{output_path}", cfg.OutputPath)
+			cfg.Jobs[i].OutputRoot = cfg.OutputPath
+		}
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -98,15 +116,28 @@ func Parse(data []byte) (*Config, error) {
 	return &cfg, nil
 }
 
+// HasRemoteJobs reports whether any job needs an SSH connection.
+func HasRemoteJobs(jobs []Job) bool {
+	for _, j := range jobs {
+		if !j.Local {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *Config) validate() error {
-	if c.SSH.Host == "" {
-		return errors.New("ssh.host is required")
-	}
-	if c.SSH.User == "" {
-		return errors.New("ssh.user is required")
-	}
-	if c.SSH.Port < 1 || c.SSH.Port > 65535 {
-		return fmt.Errorf("ssh.port %d is out of range 1-65535", c.SSH.Port)
+	// a config of only local jobs never connects, so ssh may be omitted
+	if HasRemoteJobs(c.Jobs) {
+		if c.SSH.Host == "" {
+			return errors.New("ssh.host is required")
+		}
+		if c.SSH.User == "" {
+			return errors.New("ssh.user is required")
+		}
+		if c.SSH.Port < 1 || c.SSH.Port > 65535 {
+			return fmt.Errorf("ssh.port %d is out of range 1-65535", c.SSH.Port)
+		}
 	}
 	if c.Destination == "" {
 		return errors.New("destination is required")
@@ -154,13 +185,23 @@ func (j *Job) validate() error {
 	if strings.ContainsAny(j.Output, `/\`) {
 		return fmt.Errorf("output %q must be a filename, not a path", j.Output)
 	}
-	for _, p := range placeholderRe.FindAllString(j.Output, -1) {
-		if p != "{date}" {
-			return fmt.Errorf("output %q contains unknown placeholder %s (supported: {date})", j.Output, p)
-		}
+	if err := validatePlaceholders("output", j.Output); err != nil {
+		return err
+	}
+	if err := validatePlaceholders("output_dir", j.OutputDir); err != nil {
+		return err
 	}
 	if d := time.Duration(j.Timeout); d <= 0 || d > maxJobTimeout {
 		return fmt.Errorf("timeout %s must be between 0 and %s", d, maxJobTimeout)
+	}
+	return nil
+}
+
+func validatePlaceholders(field, s string) error {
+	for _, p := range placeholderRe.FindAllString(s, -1) {
+		if p != "{date}" && p != "{year}" {
+			return fmt.Errorf("%s %q contains unknown placeholder %s (supported: {date}, {year})", field, s, p)
+		}
 	}
 	return nil
 }

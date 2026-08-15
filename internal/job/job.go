@@ -22,9 +22,12 @@ type CommandRunner interface {
 func Run(ctx context.Context, log *zap.Logger, runner CommandRunner, run *store.Run, j config.Job) error {
 	var f *store.File
 	var err error
-	if j.OutputDir != "" {
+	switch {
+	case j.OutputRoot != "":
+		f, err = store.CreateInUnder(j.OutputRoot, j.OutputDir, j.Output)
+	case j.OutputDir != "":
 		f, err = store.CreateIn(j.OutputDir, j.Output)
-	} else {
+	default:
 		f, err = run.Create(j.Name, j.Output)
 	}
 	if err != nil {
