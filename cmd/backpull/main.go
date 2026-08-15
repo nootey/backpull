@@ -21,7 +21,7 @@ import (
 
 func main() {
 	cfgPath := flag.String("config", "config.yaml", "path to config file")
-	only := flag.String("only", "", "comma-separated job names to run (default: all)")
+	only := flag.String("only", "", "comma-separated job names to run (default: all non-manual jobs)")
 	dryRun := flag.Bool("dry-run", false, "print what would run without connecting")
 	flag.Parse()
 
@@ -44,7 +44,8 @@ func run(cfgPath, only string, dryRun bool) error {
 
 	now := time.Now()
 	for i := range jobs {
-		jobs[i].Output = util.ExpandOutput(jobs[i].Output, now)
+		jobs[i].Output = util.Expand(jobs[i].Output, now)
+		jobs[i].OutputDir = util.Expand(jobs[i].OutputDir, now)
 	}
 
 	if dryRun {

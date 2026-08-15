@@ -133,6 +133,10 @@ jobs:
     command: docker exec wealth-warden-db-1 pg_dump -U postgres wealth_warden
     output: "{date}.sql"
     output_dir: H:\_backup\_alt\wealth_warden
+  - name: homepage
+    command: tar -czf - -C ~/services/homepage config data docker-compose.yml
+    output: "{date}.tar.gz"
+    output_dir: /backups/{year}/homepage
 `
 	// same output filename in a different output_dir must not be a collision
 	cfg, err := Parse([]byte(yaml))
@@ -144,6 +148,66 @@ jobs:
 	}
 	if got := cfg.Jobs[1].OutputDir; got != "" {
 		t.Errorf("Jobs[1].OutputDir = %q, want empty", got)
+	}
+	if got := cfg.Jobs[3].OutputDir; got != "/backups/{year}/homepage" {
+		t.Errorf("Jobs[3].OutputDir = %q, want %q (placeholders expand later, at run time)", got, "/backups/{year}/homepage")
+	}
+}
+
+func TestParseOutputPath(t *testing.T) {
+	yaml := `
+ssh:
+  host: server.example.com
+  user: deploy
+destination: /backups
+output_path: /mnt/hdd/_backup
+jobs:
+  - name: wealth-warden
+    command: docker exec wealth-warden-db-1 pg_dump -U postgres wealth_warden
+    output: "{date}.sql"
+    output_dir: "{output_path}/wealth_warden/{year}"
+  - name: caddy
+    command: tar -czf - -C /srv/caddy .
+    output: caddy.tar.gz
+    output_dir: /backups/caddy
+`
+	cfg, err := Parse([]byte(yaml))
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	want := "/mnt/hdd/_backup/wealth_warden/{year}"
+	if got := cfg.Jobs[0].OutputDir; got != want {
+		t.Errorf("Jobs[0].OutputDir = %q, want %q ({year} expands later, at run time)", got, want)
+	}
+	if got := cfg.Jobs[1].OutputDir; got != "/backups/caddy" {
+		t.Errorf("Jobs[1].OutputDir = %q, want %q", got, "/backups/caddy")
+	}
+}
+
+func TestParseJobManual(t *testing.T) {
+	yaml := `
+ssh:
+  host: server.example.com
+  user: deploy
+destination: /backups
+jobs:
+  - name: nextcloud-data
+    command: tar -czf - -C ~/services/nextcloud data
+    output: nextcloud-data.tar.gz
+    manual: true
+  - name: nextcloud-db
+    command: docker exec nextcloud-db mysqldump -u root nextcloud
+    output: nextcloud-db.sql
+`
+	cfg, err := Parse([]byte(yaml))
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if !cfg.Jobs[0].Manual {
+		t.Errorf("Jobs[0].Manual = false, want true")
+	}
+	if cfg.Jobs[1].Manual {
+		t.Errorf("Jobs[1].Manual = true, want default false")
 	}
 }
 
@@ -326,6 +390,51 @@ jobs:
     output: "{daet}.tar.gz"
 `,
 			wantErr: "unknown placeholder {daet}",
+		},
+		{
+			name: "unknown placeholder in output_dir",
+			yaml: `
+ssh:
+  host: server.example.com
+  user: deploy
+destination: /backups
+jobs:
+  - name: caddy
+    command: tar -czf - -C /srv/caddy .
+    output: caddy.tar.gz
+    output_dir: /backups/{decade}/caddy
+`,
+			wantErr: "unknown placeholder {decade}",
+		},
+		{
+			name: "output_path used but not set",
+			yaml: `
+ssh:
+  host: server.example.com
+  user: deploy
+destination: /backups
+jobs:
+  - name: caddy
+    command: tar -czf - -C /srv/caddy .
+    output: caddy.tar.gz
+    output_dir: "{output_path}/caddy"
+`,
+			wantErr: "output_path is not set",
+		},
+		{
+			name: "output_path in output",
+			yaml: `
+ssh:
+  host: server.example.com
+  user: deploy
+destination: /backups
+output_path: /mnt/hdd/_backup
+jobs:
+  - name: caddy
+    command: tar -czf - -C /srv/caddy .
+    output: "{output_path}.tar.gz"
+`,
+			wantErr: "unknown placeholder {output_path}",
 		},
 		{
 			name: "duplicate output_dir path",

@@ -1,7 +1,7 @@
 # backpull
 
 A Go CLI that runs configured commands on a remote server over SSH and pulls
-their output down to the local machine as timestamped files.
+their output down to the local machine.
 
 Each **job** in the config is a remote command whose stdout is captured into a
 local file. What the command does is entirely up to you - backpull just runs
@@ -28,6 +28,10 @@ comma-separated job names:
 backpull -only grafana,db
 ```
 
+Jobs marked `manual: true` in the config are skipped by a plain run and only
+execute when named explicitly via `-only` - useful for large, expensive jobs
+(e.g. a full media directory) that you don't want in the regular schedule.
+
 To check a config without connecting, pass `-dry-run` — it prints each job's
 command and target path, then exits:
 
@@ -38,7 +42,7 @@ backpull -dry-run
 See [config.example.yaml](config.example.yaml) for a full example:
 
 
-Every job needs a unique `name`, a `command`, and an `output` filename (backpull can't guess the right extension for you).
+Every job needs a unique `name`, a `command`, and an `output` filename (backpull can't guess the right extension).
 
 ## How it works
 
@@ -64,7 +68,11 @@ Every job needs a unique `name`, a `command`, and an `output` filename (backpull
   every remote command as it executes; commands that write to stderr but still
   succeed (e.g. `pg_dump` warnings) are logged as warnings.
 
-## Planned
-- Currently, only `{date}` parsing is supported to dynamically overwrite the output names per job
-  - Support for more formats could be added
-- Multiple hosts
+## Parsing parameters
+
+- In the config, you can define parameters that will be parsed dynamically when executing a command.
+- I add these as I need them, so no fully dynamic system yet.
+
+### Currently supported:
+- `{date}` - Current date, format yyyy-mm-dd
+- `{year}` - Current year

@@ -7,18 +7,19 @@ ssh:
 log:
   level: info # debug | info | warn | error (default: info)
 
-# local (absolute) directory where run output lands
+# local - directory where general run output lands
 destination: <PATH>
+# variable for output_dir (overrides destination)
+output_path: <PATH>
 
 # each job runs a command on the remote host and captures its stdout
 # into <destination>/<timestamp>/<name>/<output>
-# {date} in output expands to the run date, e.g. 2026-07-01
 jobs:
   - name: <NAME>
     command: docker exec <CONTAINER> pg_dump -U postgres <DB-NAME>
     output: <FILENAME>.<EXT>
     timeout: 2m # per-job limit, e.g. "90s", "30m", "2h" (default: 2m, max: 12h)
-    # output_dir: <PATH> # write straight into this existing dir instead of
-    #                      <destination>/<timestamp>/<name>; overwrites on rerun
+    # manual: true # manual jobs are excluded from full runs, must be ran with -only flag
+    # output_dir: <PATH> # write straight into this existing dir
 
   # ...
