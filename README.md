@@ -108,3 +108,4 @@ Two things to know:
 ### Currently supported:
 - `{date}` - Current date, format yyyy-mm-dd
 - `{year}` - Current year
+- `{month}` - Current month, format mm (zero-padded)

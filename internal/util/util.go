@@ -9,11 +9,12 @@ import (
 	"backpull/internal/config"
 )
 
-// Expand replaces {date} and {year} placeholders in a job's output or
-// output_dir with now formatted as 2006-01-02 and 2006, respectively.
+// Expand replaces {date}, {year} and {month} placeholders in a job's output or
+// output_dir with now formatted as 2006-01-02, 2006 and 01, respectively.
 func Expand(s string, now time.Time) string {
 	s = strings.ReplaceAll(s, "{date}", now.Format("2006-01-02"))
 	s = strings.ReplaceAll(s, "{year}", now.Format("2006"))
+	s = strings.ReplaceAll(s, "{month}", now.Format("01"))
 	return s
 }
 
