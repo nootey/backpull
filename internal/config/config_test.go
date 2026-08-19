@@ -137,6 +137,10 @@ jobs:
     command: tar -czf - -C ~/services/homepage config data docker-compose.yml
     output: "{date}.tar.gz"
     output_dir: /backups/{year}/homepage
+  - name: obsidian
+    command: tar -czf - -C ~/Documents/obsidian "Main vault"
+    output: "{month}.tar.gz"
+    output_dir: /backups/{year}/obsidian
 `
 	// same output filename in a different output_dir must not be a collision
 	cfg, err := Parse([]byte(yaml))
@@ -151,6 +155,9 @@ jobs:
 	}
 	if got := cfg.Jobs[3].OutputDir; got != "/backups/{year}/homepage" {
 		t.Errorf("Jobs[3].OutputDir = %q, want %q (placeholders expand later, at run time)", got, "/backups/{year}/homepage")
+	}
+	if got := cfg.Jobs[4].Output; got != "{month}.tar.gz" {
+		t.Errorf("Jobs[4].Output = %q, want %q (placeholders expand later, at run time)", got, "{month}.tar.gz")
 	}
 }
 

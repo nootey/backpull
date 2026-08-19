@@ -22,6 +22,12 @@ func TestExpand(t *testing.T) {
 	if got := Expand("/backups/{year}/{date}.tar.gz", now); got != "/backups/2026/2026-07-01.tar.gz" {
 		t.Errorf("Expand({year} and {date}) = %q, want %q", got, "/backups/2026/2026-07-01.tar.gz")
 	}
+	if got := Expand("{month}.tar.gz", now); got != "07.tar.gz" {
+		t.Errorf("Expand({month}) = %q, want %q", got, "07.tar.gz")
+	}
+	if got := Expand("/backups/{year}/{month}.tar.gz", now); got != "/backups/2026/07.tar.gz" {
+		t.Errorf("Expand({year} and {month}) = %q, want %q", got, "/backups/2026/07.tar.gz")
+	}
 }
 
 func TestFilterJobs(t *testing.T) {

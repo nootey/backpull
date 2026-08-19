@@ -199,8 +199,8 @@ func (j *Job) validate() error {
 
 func validatePlaceholders(field, s string) error {
 	for _, p := range placeholderRe.FindAllString(s, -1) {
-		if p != "{date}" && p != "{year}" {
-			return fmt.Errorf("%s %q contains unknown placeholder %s (supported: {date}, {year})", field, s, p)
+		if p != "{date}" && p != "{year}" && p != "{month}" {
+			return fmt.Errorf("%s %q contains unknown placeholder %s (supported: {date}, {year}, {month})", field, s, p)
 		}
 	}
 	return nil
