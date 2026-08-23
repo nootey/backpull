@@ -1,111 +1,98 @@
 # backpull
 
-A Go CLI that runs configured commands on a remote server over SSH and pulls
-their output down to the local machine.
+A Go CLI that runs commands on a remote server over SSH. It writes
+the output of those commands to files on the local machine.
 
-Each **job** in the config is a command whose stdout is captured into a local
-file. What the command does is entirely up to you - backpull just runs it and
-streams the bytes back. Jobs run on the remote host by default; mark one
-`local: true` to run it on this machine instead.
+Each job in the config is one command. Command output is captured into a local
+file. What the command does does not matter. It runs, and the bytes are stored.
+Jobs run on the remote host by default. Set `local: true` to run a job on this
+machine.
 
-Typical use cases (and why this exists):
+Use cases:
 
-- **Database dumps** - `pg_dump`/`mysqldump` executed inside a running Docker container via `docker exec`
-- **Config/data directories** - `tar -czf -` of a directory on the server
-- **Docker named volumes** - `docker run --rm -v vol:/data alpine tar -czf - -C /data .`
-- **Local directories** - a `local: true` job tarring a directory on this machine straight onto a backup drive
+- Database dumps. Run `pg_dump` or `mysqldump` in a Docker container with `docker exec`.
+- Config and data directories. Run `tar -czf -` on a directory on the server.
+- Docker named volumes. Run `docker run --rm -v vol:/data alpine tar -czf - -C /data .`
+- Local directories. A `local: true` job writes a tar of a local directory to a backup drive.
 
-Runs from Linux or Windows; The remote side just needs SSH and whatever tools your commands call.
+OS independent. The remote host needs SSH and the tools that the commands call.
 
 ## Usage
 
 ```
 backpull -config config.yaml
+// or
+make
 ```
 
-To run a subset of jobs (e.g. re-running one that failed), pass `-only` with
-comma-separated job names:
+Use `-only` to run some of the jobs. Give the job names, separated by commas.
+This is useful when one job failed.
 
 ```
-backpull -only grafana,db
+make only=grafana,db
 ```
 
-Jobs marked `manual: true` in the config are skipped by a plain run and only
-execute when named explicitly via `-only` - useful for large, expensive jobs
-(e.g. a full media directory) that you don't want in the regular schedule.
+A job with `manual: true` is skipped in a full run. It runs only when you name
+it with `-only`. Use this for large, slow jobs, for example a full media
+directory.
 
-To check a config without connecting, pass `-dry-run` — it prints each job's
-command and target path, then exits:
+Use `-dry-run` to check a config. The command and target path of each job are
+printed, then the run stops. No connection is made.
 
 ```
 backpull -dry-run
 ```
 
-See [config.example.yaml](config.example.yaml) for a full example:
+## Configuration
 
+Commands are defined in `config.yaml`, you must create your own.
 
-Every job needs a unique `name`, a `command`, and an `output` filename (backpull can't guess the right extension).
+[config.example.yaml](config.example.yaml) shows a full example. Each job needs a
+unique `name`, a `command` and an `output` filename. The correct file extension
+cannot be guessed, so they must be provided.
 
-## Local jobs
+### Local jobs
 
-A job marked `local: true` runs on the machine backpull runs from, not the
-server. Everything else is the same - same `output`, `output_dir`, `timeout`,
-`manual` and placeholders:
+A job with `local: true` runs on this machine, not on the server. The other
+fields do not change.
 
-```yaml
-- name: notes
-  local: true
-  command: tar -czf - -C ~/documents notes
-  output: "{date}.tar.gz"
-  output_dir: "{output_path}/notes/{year}"
-```
-
-Two things to know:
-
-- **The `ssh:` block is optional** when every job is local. backpull only
-  connects if the selected jobs include a remote one, so `-only notes`
-  never touches the network.
-- **Commands are shell strings**, run through `sh -c` on Linux and `cmd /c` on
-  Windows. A local job's command is therefore tied to the OS you run it from.
+The `ssh` block is not necessary if all jobs are local. A connection is made
+only when a selected job is remote. Thus `-only notes` does not use the network.
 
 ## How it works
 
-- **One SSH connection per run.** backpull dials `host:port`, authenticates
-  with `key_file` (or ssh-agent if unset - including the Windows OpenSSH
-  agent), then opens one session per job over the same connection.
-- **Host keys are verified against `~/.ssh/known_hosts`.** Unknown hosts are
-  rejected; connect once with plain `ssh` to add the key. A changed host key
-  fails with a mismatch error.
-- **Commands run verbatim.** The configured `command` is passed to a shell
-  exactly as written - the remote one, or the local one for `local: true`
-  jobs. No wrapping. stdout streams straight to the output file; it is never
-  buffered in memory.
-- **Output layout is `<destination>/<timestamp>/<name>/<output>`**. Each run
-  gets a fresh timestamp directory, so runs never overwrite each other.
-- **`output_dir` bypasses that layout** and writes straight into the given
-  directory, overwriting on a rerun. A directory built from `{output_path}` is
-  created if missing - `output_path` itself must exist, which is what proves
-  the drive is mounted. A literal `output_dir` is never created: a missing one
-  fails the job.
-- **Writes are atomic.** Output streams to `<output>.partial` and is only
-  renamed into place after the command exits 0 and the file is synced. An
-  interrupted or failed transfer never leaves a file that looks like a valid
-  backup.
-- **Failures are loud.** A non-zero exit fails the job with the command's
-  stderr in the error message; a command that produces no output is also
-  treated as a failure. A failed job does not stop the run - the remaining
-  jobs still run, every job's result is listed in a summary at the end, and
-  backpull exits non-zero if any of them failed.
-- **Logging** goes to stdout and `logs/app.log`. Set `log.level: debug` to see
-  every remote command as it executes; commands that write to stderr but still
-  succeed (e.g. `pg_dump` warnings) are logged as warnings.
+- One SSH connection per run. The connection goes to `host:port`.
+  Authentication uses `key_file`. If the `key_file` is not set, the ssh-agent is
+  used. This includes the Windows OpenSSH agent. One session per job is opened
+  on that connection.
+- Host keys are verified against `~/.ssh/known_hosts`. Unknown hosts are
+  rejected.
+- Commands run without changes. Each command goes to a shell exactly written.
+  Stored directly to the output file, the data is never held in memory.
+- The default output path is `<destination>/<timestamp>/<name>/<output>`. Each
+  run makes a new timestamp directory, making idempotency configurable.
+- `output_dir` replaces that layout. Output goes into the given directory and
+  overwrites the file on the next run. A directory that starts with
+  `{output_path}` is created if it is missing. `output_path` itself must exist.
+  If that directory is missing, the job fails.
+- Writes are atomic. Output goes to `<output>.partial`. The file is renamed only
+  after the command exits with 0 and the file is synced. A failed transfer
+  cannot leave a file that looks like a good backup.
+- Failures are loud. A non-zero exit fails the job. The error message contains
+  the stderr of the command. A command that gives no output also fails. One
+  failed job does not stop the run. The other jobs continue. All results are
+  listed in a summary at the end.
+- Logs go to stdout and to `logs/app.log`. Set `log.level: debug` to see each
+  command as it runs. A command that writes to stderr but is successful is
+  logged as a warning. Example: `pg_dump` warnings.
 
-## Parsing parameters
+## Placeholders
 
-- In the config, you can define parameters that will be parsed dynamically when executing a command.
-- I add these as I need them, so no fully dynamic system yet.
+Placeholders in the config are replaced when a job runs. New ones are added when Needed. 
+There is no fully dynamic system.
 
-### Currently supported:
-- `{date}` - Current date, format yyyy-mm-dd
-- `{year}` - Current year
-- `{month}` - Current month, format mm (zero-padded)
+Currently supported:
+
+- `{date}` - the current date, format yyyy-mm-dd
+- `{year}` - the current year
+- `{month}` - the current month, format mm with a leading zero
