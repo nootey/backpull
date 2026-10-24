@@ -100,7 +100,9 @@ func (c *Client) RunCommand(ctx context.Context, command string, stdout io.Write
 	select {
 	case <-ctx.Done():
 		_ = sess.Close()
-		<-done
+		if err := <-done; err != nil {
+			c.log.Debug("remote command stopped after cancel", zap.String("command", command), zap.Error(err))
+		}
 		return ctx.Err()
 	case err := <-done:
 		if err != nil {
